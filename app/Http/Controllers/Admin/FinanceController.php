@@ -381,6 +381,11 @@ class FinanceController extends Controller
 
         return view('admin.finance.bank-transfers.show', compact('bankTransfer', 'transactions'));
     }
+    public function editBankTransfer(BankTransfer $bankTransfer)
+    {
+        $bankTransfer->load(['fromBankAccount', 'toBankAccount']);
+        return view('admin.finance.bank-transfers.edit', compact('bankTransfer'));
+    }
     public function updateBankTransfer(Request $request, BankTransfer $bankTransfer)
     {
         $data = $request->validate([
