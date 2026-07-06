@@ -52,7 +52,8 @@
     .ft-route-box.from .tag { color: #B91C1C; }
     .ft-route-box.to .tag { color: #15803D; }
     .ft-route-box .name { font-family:'Outfit',sans-serif; font-weight: 700; font-size: 15px; color: #312E81; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .ft-route-box .bal { font-size: 12px; color: var(--ft-text-muted); margin-top: 2px; }
+    .ft-route-box .acc-no { font-size: 11.5px; color: #9CA3AF; margin-top: 2px; font-family: 'ui-monospace','SFMono-Regular',monospace; }
+    .ft-route-box .bal { font-size: 12px; color: var(--ft-text-muted); margin-top: 4px; font-weight: 600; }
     .ft-route-arrow-icon { font-size: 22px; color: #A855F7; flex-shrink: 0; }
 
     .ft-account-select option { padding: 6px; }
@@ -106,8 +107,9 @@
                         <option value="">-- Select karo --</option>
                         @foreach($bankAccounts as $acc)
                             <option value="{{ $acc->id }}" data-name="{{ $acc->name }}" data-balance="{{ $acc->current_balance }}"
+                                data-account-number="{{ $acc->account_number ?: '—' }}"
                                 @selected(old('from_bank_account_id') == $acc->id)>
-                                {{ $acc->name }} ({{ $acc->bank_name ?: ucfirst($acc->type) }}) — ₹{{ number_format($acc->current_balance,2) }}
+                                {{ $acc->name }} ({{ $acc->bank_name ?: ucfirst($acc->type) }}) @if($acc->account_number) &middot; A/C {{ $acc->account_number }} @endif — ₹{{ number_format($acc->current_balance,2) }}
                             </option>
                         @endforeach
                     </select>
@@ -120,8 +122,9 @@
                         <option value="">-- Select karo --</option>
                         @foreach($bankAccounts as $acc)
                             <option value="{{ $acc->id }}" data-name="{{ $acc->name }}" data-balance="{{ $acc->current_balance }}"
+                                data-account-number="{{ $acc->account_number ?: '—' }}"
                                 @selected(old('to_bank_account_id') == $acc->id)>
-                                {{ $acc->name }} ({{ $acc->bank_name ?: ucfirst($acc->type) }}) — ₹{{ number_format($acc->current_balance,2) }}
+                                {{ $acc->name }} ({{ $acc->bank_name ?: ucfirst($acc->type) }}) @if($acc->account_number) &middot; A/C {{ $acc->account_number }} @endif — ₹{{ number_format($acc->current_balance,2) }}
                             </option>
                         @endforeach
                     </select>
@@ -134,12 +137,14 @@
                 <div class="ft-route-box from">
                     <div class="tag">From</div>
                     <div class="name" id="fromName">—</div>
+                    <div class="acc-no" id="fromAccNo">A/C: —</div>
                     <div class="bal" id="fromBal">Balance: ₹0.00</div>
                 </div>
                 <i class="fas fa-arrow-right-long ft-route-arrow-icon"></i>
                 <div class="ft-route-box to">
                     <div class="tag">To</div>
                     <div class="name" id="toName">—</div>
+                    <div class="acc-no" id="toAccNo">A/C: —</div>
                     <div class="bal" id="toBal">Balance: ₹0.00</div>
                 </div>
             </div>
@@ -221,10 +226,12 @@
 
             if (fromSel.value) {
                 document.getElementById('fromName').textContent = fromOpt.dataset.name;
+                document.getElementById('fromAccNo').textContent = 'A/C: ' + (fromOpt.dataset.accountNumber || '—');
                 document.getElementById('fromBal').textContent = 'Balance: ' + fmt(fromOpt.dataset.balance);
             }
             if (toSel.value) {
                 document.getElementById('toName').textContent = toOpt.dataset.name;
+                document.getElementById('toAccNo').textContent = 'A/C: ' + (toOpt.dataset.accountNumber || '—');
                 document.getElementById('toBal').textContent = 'Balance: ' + fmt(toOpt.dataset.balance);
             }
             checkBalance();
