@@ -414,6 +414,27 @@ class FinanceController extends Controller
             ->route('admin.finance.bank-transfers.show', $bankTransfer)
             ->with('success', 'Transfer detail update ho gayi.');
     }
+    public function destroyBankTransfer(Request $request, BankTransfer $bankTransfer)
+    {
+        abort_unless($request->user()->can('finance.approve'), 403);
+
+        DB::transaction(function () use ($bankTransfer) {
+            $transactions = BankTransaction::where('transactionable_type', BankTransfer::class)
+                ->where('transactionable_id', $bankTransfer->id)
+                ->get();
+
+            foreach ($transactions as $txn) {
+                $this->reverseAndDeleteTransaction($txn);
+            }
+
+            ActivityLog::log('deleted', "Deleted bank transfer #{$bankTransfer->id}", $bankTransfer);
+            $bankTransfer->delete();
+        });
+
+        return redirect()
+            ->route('admin.finance.bank-transfers.index')
+            ->with('success', 'Bank transfer delete ho gaya, dono accounts ka balance revert ho gaya.');
+    }
     /**
      * Manual bank entry — for bank charges, corrections, etc.
      */
