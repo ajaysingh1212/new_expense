@@ -8,7 +8,7 @@
         --ft-grad-1: #7C3AED; --ft-grad-2: #A855F7; --ft-grad-3: #6366F1;
         --ft-border: #E9E4FA; --ft-text-muted: #6B7280;
     }
-    .ft-wrap { font-family: 'Inter','Outfit',sans-serif; max-width: 880px; margin: 0 auto; }
+    .ft-wrap { font-family: 'Inter','Outfit',sans-serif;  margin: 0 auto; }
     .ft-breadcrumb { font-size: 13px; color: var(--ft-text-muted); margin-bottom: 14px; }
     .ft-breadcrumb a { color: #6D28D9; text-decoration: none; font-weight: 600; }
 

@@ -8,7 +8,7 @@
         --ft-grad-1: #7C3AED; --ft-grad-2: #A855F7; --ft-grad-3: #6366F1;
         --ft-border: #E9E4FA; --ft-text-muted: #6B7280;
     }
-    .ft-wrap { font-family: 'Inter','Outfit',sans-serif; max-width: 880px; margin: 0 auto; }
+    .ft-wrap { font-family: 'Inter','Outfit',sans-serif;  margin: 0 auto; }
 
     .ft-breadcrumb { font-size: 13px; color: var(--ft-text-muted); margin-bottom: 14px; }
     .ft-breadcrumb a { color: #6D28D9; text-decoration: none; font-weight: 600; }
@@ -106,7 +106,7 @@
                     <select name="from_bank_account_id" id="fromAccount" class="form-select @error('from_bank_account_id') is-invalid @enderror" required>
                         <option value="">-- Select karo --</option>
                         @foreach($bankAccounts as $acc)
-                            <option value="{{ $acc->id }}" data-name="{{ $acc->name }}" data-balance="{{ $acc->current_balance }}"
+                            <option value="{{ $acc->id }}"  data-name="{{ $acc->name }}" data-balance="{{ $acc->current_balance }}"
                                 data-account-number="{{ $acc->account_number ?: '—' }}"
                                 @selected(old('from_bank_account_id') == $acc->id)>
                                 {{ $acc->name }} ({{ $acc->bank_name ?: ucfirst($acc->type) }}) @if($acc->account_number) &middot; A/C {{ $acc->account_number }} @endif — ₹{{ number_format($acc->current_balance,2) }}
