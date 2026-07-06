@@ -381,6 +381,34 @@ class FinanceController extends Controller
 
         return view('admin.finance.bank-transfers.show', compact('bankTransfer', 'transactions'));
     }
+    public function updateBankTransfer(Request $request, BankTransfer $bankTransfer)
+    {
+        $data = $request->validate([
+            'transfer_date' => ['required', 'date'],
+            'method'        => ['required', 'string', 'max:80'],
+            'reference_no'  => ['nullable', 'string', 'max:100'],
+            'notes'         => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        DB::transaction(function () use ($bankTransfer, $data) {
+            $bankTransfer->update($data);
+
+            // Dono related bank transactions ki date/reference bhi sync kar do,
+            // taaki statement me date match rahe.
+            BankTransaction::where('transactionable_type', BankTransfer::class)
+                ->where('transactionable_id', $bankTransfer->id)
+                ->update([
+                    'transaction_date' => $data['transfer_date'],
+                    'reference_no'     => $data['reference_no'] ?? null,
+                ]);
+
+            ActivityLog::log('updated', "Updated bank transfer #{$bankTransfer->id}", $bankTransfer);
+        });
+
+        return redirect()
+            ->route('admin.finance.bank-transfers.show', $bankTransfer)
+            ->with('success', 'Transfer detail update ho gayi.');
+    }
     /**
      * Manual bank entry — for bank charges, corrections, etc.
      */
