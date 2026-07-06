@@ -368,7 +368,19 @@ class FinanceController extends Controller
         return back()->with('success', 'Bank transfer completed and statements generated for both accounts.');
     }
 
+    public function showBankTransfer(BankTransfer $bankTransfer)
+    {
+        $bankTransfer->load(['fromBankAccount', 'toBankAccount', 'creator']);
 
+        $transactions = BankTransaction::with(['bankAccount', 'creator'])
+            ->where('transactionable_type', BankTransfer::class)
+            ->where('transactionable_id', $bankTransfer->id)
+            ->latest('transaction_date')
+            ->latest()
+            ->get();
+
+        return view('admin.finance.bank-transfers.show', compact('bankTransfer', 'transactions'));
+    }
     /**
      * Manual bank entry — for bank charges, corrections, etc.
      */
