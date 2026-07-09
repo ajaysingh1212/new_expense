@@ -1168,7 +1168,7 @@ class FinanceController extends Controller
             'created_by'            => $userId,
         ]);
     }
-    // ════════════════════════════════════════════════════════════════════
+    
     //  TRANSACTION EDIT / DELETE (Admin only — cascades to source + balance)
     // ════════════════════════════════════════════════════════════════════
 
