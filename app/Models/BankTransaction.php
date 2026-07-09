@@ -63,4 +63,8 @@ class BankTransaction extends Model
     {
         return $this->belongsTo(User::class, 'reconciled_by');
     }
+    public function editor(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'updated_by');
+    }
 }

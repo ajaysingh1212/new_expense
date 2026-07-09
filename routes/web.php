@@ -125,7 +125,10 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'active.user','requi
 
         // Statement
         Route::get('/statement',  [FinanceController::class, 'statement'])->name('statement.index')->middleware('can:finance.bank.index');
-
+        
+        // ── NEW: Transaction edit / delete (Admin only, guarded inside controller too) ──
+        Route::put('/transactions/{transaction}',    [FinanceController::class, 'updateTransaction'])->name('transactions.update')->middleware('can:finance.approve');
+        Route::delete('/transactions/{transaction}', [FinanceController::class, 'destroyTransaction'])->name('transactions.destroy')->middleware('can:finance.approve');
         // ── NEW: Manual bank entry & reconciliation ──────────────────────
         Route::post('/bank-accounts/manual-entry',           [FinanceController::class, 'storeManualBankEntry'])->name('bank-accounts.manual-entry')->middleware('can:finance.approve');
         Route::patch('/transactions/{transaction}/reconcile',[FinanceController::class, 'updateReconciliation'])->name('transactions.reconcile')->middleware('can:finance.approve');

@@ -261,9 +261,18 @@ class FinanceController extends Controller
         $selectedAccount = $request->integer('bank_account_id');
         $from            = $request->date('from');
         $to              = $request->date('to');
-        $direction       = $request->input('direction'); // 'credit' | 'debit' | null
+        $direction       = $request->input('direction');
 
-        $transactions = BankTransaction::with(['bankAccount', 'creator', 'reconciledBy'])
+        $transactions = BankTransaction::with([
+                'bankAccount', 'creator', 'reconciledBy', 'editor',
+                'transactionable' => function ($morphTo) {
+                    $morphTo->morphWith([
+                        CashflowPlan::class   => ['ledger'],
+                        ExpensePayment::class => ['expensePlan.ledger'],
+                        BankTransfer::class   => ['fromBankAccount', 'toBankAccount'],
+                    ]);
+                },
+            ])
             ->when($selectedAccount, fn($q) => $q->where('bank_account_id', $selectedAccount))
             ->when($from,      fn($q) => $q->whereDate('transaction_date', '>=', $from))
             ->when($to,        fn($q) => $q->whereDate('transaction_date', '<=', $to))
@@ -273,7 +282,6 @@ class FinanceController extends Controller
             ->paginate(30)
             ->withQueryString();
 
-        // Page-level summary (on current page only)
         $summary = [
             'credit' => $transactions->getCollection()->where('direction', 'credit')->sum('amount'),
             'debit'  => $transactions->getCollection()->where('direction', 'debit')->sum('amount'),
@@ -1160,7 +1168,174 @@ class FinanceController extends Controller
             'created_by'            => $userId,
         ]);
     }
+    // ════════════════════════════════════════════════════════════════════
+    //  TRANSACTION EDIT / DELETE (Admin only — cascades to source + balance)
+    // ════════════════════════════════════════════════════════════════════
 
+    public function updateTransaction(Request $request, BankTransaction $transaction)
+    {
+        $this->ensureAdmin($request->user());
+
+        if ($transaction->category === 'Opening Balance') {
+            return back()->with('error', 'Opening balance entry ko edit nahi kar sakte.');
+        }
+
+        $data = $request->validate([
+            'direction'        => ['required', Rule::in(['credit', 'debit'])],
+            'amount'           => ['required', 'numeric', 'min:0.01'],
+            'transaction_date' => ['required', 'date'],
+            'party_name'       => ['nullable', 'string', 'max:150'],
+            'reference_no'     => ['nullable', 'string', 'max:100'],
+            'category'         => ['nullable', 'string', 'max:100'],
+            'description'      => ['required', 'string', 'max:1000'],
+        ]);
+
+        DB::transaction(function () use ($request, $transaction, $data) {
+            $transaction = BankTransaction::lockForUpdate()->findOrFail($transaction->id);
+            $oldAmount    = (float) $transaction->amount;
+            $account      = BankAccount::lockForUpdate()->findOrFail($transaction->bank_account_id);
+
+            // ── Cascade update to whichever source created this transaction ──
+            if ($transaction->transactionable_type === CashflowPlan::class && $transaction->transactionable) {
+                $transaction->transactionable->update([
+                    'expected_amount' => $data['amount'],
+                    'received_date'   => $data['transaction_date'],
+                    'reference_no'    => $data['reference_no'] ?? $transaction->transactionable->reference_no,
+                ]);
+            } elseif ($transaction->transactionable_type === ExpensePayment::class && $transaction->transactionable) {
+                $payment = $transaction->transactionable;
+                $payment->update([
+                    'amount'       => $data['amount'],
+                    'payment_date' => $data['transaction_date'],
+                    'reference_no' => $data['reference_no'] ?? $payment->reference_no,
+                ]);
+
+                $expense = ExpensePlan::lockForUpdate()->findOrFail($payment->expense_plan_id);
+                $newPaid = ((float) $expense->paid_amount - $oldAmount) + (float) $data['amount'];
+                $expense->update(['paid_amount' => max($newPaid, 0)]);
+                $expense->refresh();
+                $expense->update(['status' => $expense->remaining_amount <= 0 ? 'paid' : 'partial']);
+            } elseif ($transaction->transactionable_type === BankTransfer::class && $transaction->transactionable) {
+                $transfer = $transaction->transactionable;
+                $transfer->update([
+                    'amount'        => $data['amount'],
+                    'transfer_date' => $data['transaction_date'],
+                    'reference_no'  => $data['reference_no'] ?? $transfer->reference_no,
+                ]);
+
+                // Doosri leg (opposite account) bhi sync karo
+                $sibling = BankTransaction::where('transactionable_type', BankTransfer::class)
+                    ->where('transactionable_id', $transfer->id)
+                    ->where('id', '!=', $transaction->id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($sibling) {
+                    $sibling->update([
+                        'amount'           => $data['amount'],
+                        'transaction_date' => $data['transaction_date'],
+                        'reference_no'     => $data['reference_no'] ?? $sibling->reference_no,
+                    ]);
+                }
+            }
+
+            $transaction->update($data + ['updated_by' => $request->user()->id]);
+
+            // ── Recalculate balance_after chain + current_balance for affected account(s) ──
+            $this->recalculateBalanceChain($account);
+
+            if ($transaction->transactionable_type === BankTransfer::class && isset($sibling)) {
+                $otherAccount = BankAccount::lockForUpdate()->findOrFail($sibling->bank_account_id);
+                $this->recalculateBalanceChain($otherAccount);
+            }
+
+            ActivityLog::log('updated', "Edited transaction {$transaction->transaction_no} on {$account->name}", $transaction);
+        });
+
+        return back()->with('success', 'Transaction update ho gaya. Linked ledger/expense/cashflow aur bank balance sab sync kar diye gaye hain.');
+    }
+
+    public function destroyTransaction(Request $request, BankTransaction $transaction)
+    {
+        $this->ensureAdmin($request->user());
+
+        if ($transaction->category === 'Opening Balance') {
+            return back()->with('error', 'Opening balance entry ko delete nahi kar sakte.');
+        }
+
+        DB::transaction(function () use ($transaction) {
+            $transaction = BankTransaction::lockForUpdate()->findOrFail($transaction->id);
+            $account     = BankAccount::lockForUpdate()->findOrFail($transaction->bank_account_id);
+            $txnNo       = $transaction->transaction_no;
+            $accountName = $account->name;
+
+            // ── Reverse whichever source created this transaction ──
+            if ($transaction->transactionable_type === CashflowPlan::class && $transaction->transactionable) {
+                $transaction->transactionable->update([
+                    'status'        => 'approved',
+                    'received_date' => null,
+                ]);
+            } elseif ($transaction->transactionable_type === ExpensePayment::class && $transaction->transactionable) {
+                $payment = $transaction->transactionable;
+                $expense = ExpensePlan::lockForUpdate()->findOrFail($payment->expense_plan_id);
+                $newPaid = max((float) $expense->paid_amount - (float) $payment->amount, 0);
+                $expense->update(['paid_amount' => $newPaid]);
+                $expense->refresh();
+                $expense->update(['status' => $newPaid <= 0 ? 'approved' : 'partial']);
+                $payment->delete();
+            } elseif ($transaction->transactionable_type === BankTransfer::class && $transaction->transactionable) {
+                $transfer = $transaction->transactionable;
+                $sibling  = BankTransaction::where('transactionable_type', BankTransfer::class)
+                    ->where('transactionable_id', $transfer->id)
+                    ->where('id', '!=', $transaction->id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($sibling) {
+                    $siblingAccount = BankAccount::lockForUpdate()->findOrFail($sibling->bank_account_id);
+                    $sibling->delete();
+                    $this->recalculateBalanceChain($siblingAccount);
+                }
+                $transfer->delete();
+            }
+
+            $transaction->delete();
+            $this->recalculateBalanceChain($account);
+
+            ActivityLog::log('deleted', "Deleted transaction {$txnNo} on {$accountName} (reversed)", null);
+        });
+
+        return back()->with('success', 'Transaction delete ho gaya. Amount, linked ledger/expense/cashflow aur bank balance sab revert kar diye gaye hain.');
+    }
+
+    /**
+     * Sirf admin/super-admin ye edit/delete kar sakte hain.
+     */
+    private function ensureAdmin(User $user): void
+    {
+        abort_unless($user->hasRole('admin') || $user->hasRole('super-admin'), 403, 'Sirf admin ye action kar sakte hain.');
+    }
+
+    /**
+     * Bank account ke opening balance se leke, saari transactions ko
+     * date-order me replay karke current_balance aur har txn ka
+     * balance_after dobara sahi karta hai. Edit/Delete ke baad hamesha call karo.
+     */
+    private function recalculateBalanceChain(BankAccount $account): void
+    {
+        $balance = (float) $account->opening_balance;
+
+        BankTransaction::where('bank_account_id', $account->id)
+            ->orderBy('transaction_date')
+            ->orderBy('id')
+            ->get()
+            ->each(function (BankTransaction $txn) use (&$balance) {
+                $balance += $txn->direction === 'credit' ? (float) $txn->amount : -(float) $txn->amount;
+                $txn->update(['balance_after' => $balance]);
+            });
+
+        $account->update(['current_balance' => $balance]);
+    }
     private function nextDocumentNumber(string $prefix): string
     {
         return $prefix . '-' . now()->format('Ymd') . '-' . str_pad((string) random_int(1, 999999), 6, '0', STR_PAD_LEFT);

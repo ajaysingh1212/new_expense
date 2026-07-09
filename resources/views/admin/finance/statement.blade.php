@@ -224,6 +224,10 @@ body { background: var(--st-bg) !important; }
 /* Changed-by tooltip row */
 .rec-changed-by { font-size: .7rem; color: var(--st-muted); margin-top: 3px; }
 
+/* Action buttons in row */
+.row-actions { display: flex; gap: 6px; justify-content: center; }
+.row-actions .btn-stmt { padding: 6px 9px; font-size: .78rem; }
+
 /* Footer */
 .stmt-footer {
     padding: 14px 22px;
@@ -285,22 +289,27 @@ body { background: var(--st-bg) !important; }
 }
 .section-label::after { content: ''; flex: 1; height: 1px; background: var(--st-border); }
 
-/* ── Reconcile Confirm Modal ── */
-#reconcileModal .modal-dialog { max-width: 430px; }
-#reconcileModal .rc-step-title {
-    font-size: .92rem; font-weight: 700; color: var(--st-text); margin-bottom: 6px;
-}
-#reconcileModal .rc-step-hint {
-    font-size: .78rem; color: var(--st-muted); margin: 0;
-}
-#reconcileModal .rc-warning-box {
+/* View modal detail rows */
+.vt-row { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px dashed #eef2f7; font-size: .83rem; }
+.vt-row:last-child { border-bottom: none; }
+.vt-row .vt-k { color: var(--st-muted); flex: 0 0 42%; }
+.vt-row .vt-v { color: var(--st-text); font-weight: 600; text-align: right; flex: 1; word-break: break-word; }
+.vt-link { display: inline-flex; align-items: center; gap: 6px; font-size: .78rem; font-weight: 700; color: #1e40af; text-decoration: none; margin-top: 4px; }
+.vt-link:hover { text-decoration: underline; }
+
+/* ── Confirm-style modals (Reconcile / Delete) ── */
+.rc-step-title { font-size: .92rem; font-weight: 700; color: var(--st-text); margin-bottom: 6px; }
+.rc-step-hint  { font-size: .78rem; color: var(--st-muted); margin: 0; }
+.rc-warning-box {
     background: #fffbeb; border: 1px solid #fde68a; border-radius: 9px;
     padding: 12px 16px; font-size: .84rem; color: #92400e;
     display: flex; gap: 10px; align-items: flex-start;
 }
-#reconcileModal .rc-warning-box i { margin-top: 2px; flex-shrink: 0; }
-#reconcileModal .rc-actions { width: 100%; display: flex; gap: 10px; }
-#reconcileModal .rc-actions .btn { flex: 1; border-radius: 8px; font-weight: 700; }
+.rc-warning-box i { margin-top: 2px; flex-shrink: 0; }
+.rc-actions { width: 100%; display: flex; gap: 10px; }
+.rc-actions .btn { flex: 1; border-radius: 8px; font-weight: 700; }
+#reconcileModal .modal-dialog,
+#deleteTxnModal .modal-dialog { max-width: 430px; }
 
 /* Print styles */
 @media print {
@@ -318,6 +327,7 @@ body { background: var(--st-bg) !important; }
 @php
     $money  = fn($v) => 'Rs ' . number_format((float) $v, 2);
     $net    = ($summary['credit'] ?? 0) - ($summary['debit'] ?? 0);
+    $isAdmin = auth()->user() && (auth()->user()->hasRole('admin') || auth()->user()->hasRole('super-admin'));
 
     // Selected account balance
     $selectedBankBalance = null;
@@ -492,10 +502,35 @@ body { background: var(--st-bg) !important; }
                     <th style="text-align:right;">Credit (Cr)</th>
                     <th style="text-align:right;">Balance</th>
                     <th style="text-align:center;">Reconciliation</th>
+                    @if($isAdmin)
+                    <th style="text-align:center;" class="no-print">Actions</th>
+                    @endif
                 </tr>
             </thead>
             <tbody>
             @forelse($transactions as $txn)
+            @php
+                $sourceLabel  = 'Manual / Opening Entry';
+                $sourceDetail = '-';
+                $sourceLink   = null;
+
+                if ($txn->transactionable_type === \App\Models\CashflowPlan::class && $txn->transactionable) {
+                    $sourceLabel  = 'Cash Inflow (Ledger)';
+                    $sourceDetail = ($txn->transactionable->title ?? '-') . ' — Ledger: ' . ($txn->transactionable->ledger?->name ?? '-');
+                    $sourceLink   = route('admin.finance.cashflows.show', $txn->transactionable_id);
+                } elseif ($txn->transactionable_type === \App\Models\ExpensePayment::class && $txn->transactionable) {
+                    $plan         = $txn->transactionable->expensePlan;
+                    $sourceLabel  = 'Expense Payment (Ledger)';
+                    $sourceDetail = ($plan->title ?? '-') . ' — Ledger: ' . ($plan?->ledger?->name ?? '-');
+                    $sourceLink   = $plan ? route('admin.finance.expenses.show', $plan->id) : null;
+                } elseif ($txn->transactionable_type === \App\Models\BankTransfer::class && $txn->transactionable) {
+                    $sourceLabel  = 'Bank Transfer';
+                    $sourceDetail = 'From: ' . ($txn->transactionable->fromBankAccount?->name ?? '-') . ' → To: ' . ($txn->transactionable->toBankAccount?->name ?? '-');
+                    $sourceLink   = route('admin.finance.bank-transfers.show', $txn->transactionable_id);
+                } elseif ($txn->category === 'Opening Balance') {
+                    $sourceLabel = 'Opening Balance';
+                }
+            @endphp
             <tr class="row-{{ $txn->direction }}">
 
                 {{-- Date --}}
@@ -598,10 +633,66 @@ body { background: var(--st-bg) !important; }
                     </div>
                     @endif
                 </td>
+
+                {{-- Actions: View / Edit / Delete (Admin only) --}}
+                @if($isAdmin)
+                <td style="text-align:center;" class="no-print">
+                    <div class="row-actions">
+                        <button type="button" class="btn-stmt" style="background:#f1f5f9;color:#334155;"
+                                title="View Details"
+                                onclick="openViewModal(this)"
+                                data-txnno="{{ $txn->transaction_no }}"
+                                data-date="{{ $txn->transaction_date?->format('d M Y') }}"
+                                data-account="{{ $txn->bankAccount?->name }}"
+                                data-direction="{{ strtoupper($txn->direction) }}"
+                                data-amount="{{ $money($txn->amount) }}"
+                                data-balance="{{ $money($txn->balance_after) }}"
+                                data-party="{{ $txn->party_name ?: '-' }}"
+                                data-reference="{{ $txn->reference_no ?: '-' }}"
+                                data-category="{{ $txn->category ?: '-' }}"
+                                data-description="{{ $txn->description ?: '-' }}"
+                                data-recstatus="{{ ucfirst($txn->reconciliation_status) }}"
+                                data-createdby="{{ $txn->creator?->name ?: '-' }}"
+                                data-createdat="{{ $txn->created_at?->format('d M Y, h:i A') ?: '-' }}"
+                                data-editedby="{{ $txn->editor?->name ?: '-' }}"
+                                data-editedat="{{ $txn->updated_by ? ($txn->updated_at?->format('d M Y, h:i A') ?: '-') : '-' }}"
+                                data-reconby="{{ $txn->reconciledBy?->name ?: '-' }}"
+                                data-reconat="{{ $txn->reconciled_at?->format('d M Y, h:i A') ?: '-' }}"
+                                data-sourcelabel="{{ $sourceLabel }}"
+                                data-sourcedetail="{{ $sourceDetail }}"
+                                data-sourcelink="{{ $sourceLink ?: '' }}">
+                            <i class="fas fa-eye"></i>
+                        </button>
+
+                        <button type="button" class="btn-stmt" style="background:#dbeafe;color:#1e40af;"
+                                title="Edit Transaction"
+                                onclick="openEditModal(this)"
+                                data-url="{{ route('admin.finance.transactions.update', $txn) }}"
+                                data-direction="{{ $txn->direction }}"
+                                data-amount="{{ $txn->amount }}"
+                                data-date="{{ $txn->transaction_date?->format('Y-m-d') }}"
+                                data-party="{{ $txn->party_name }}"
+                                data-reference="{{ $txn->reference_no }}"
+                                data-category="{{ $txn->category }}"
+                                data-description="{{ $txn->description }}"
+                                data-txnno="{{ $txn->transaction_no }}">
+                            <i class="fas fa-pen"></i>
+                        </button>
+
+                        <button type="button" class="btn-stmt" style="background:#fef2f2;color:#dc2626;"
+                                title="Delete Transaction"
+                                onclick="openDeleteModal(this)"
+                                data-url="{{ route('admin.finance.transactions.destroy', $txn) }}"
+                                data-txnno="{{ $txn->transaction_no }}">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </td>
+                @endif
             </tr>
             @empty
             <tr>
-                <td colspan="10">
+                <td colspan="{{ $isAdmin ? 11 : 10 }}">
                     <div class="empty-stmt">
                         <i class="fas fa-file-lines"></i>
                         <h4>No transactions found</h4>
@@ -826,6 +917,152 @@ body { background: var(--st-bg) !important; }
 </div>
 @endcan
 
+{{-- ══════════════════════════════════════════════════════════════
+     VIEW / EDIT / DELETE TRANSACTION MODALS (Admin only)
+══════════════════════════════════════════════════════════════ --}}
+@if($isAdmin)
+
+{{-- ── VIEW DETAILS MODAL ── --}}
+<div class="modal fade fin-modal" id="viewTxnModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header" style="background: linear-gradient(135deg,#0f172a,#1e40af);">
+                <h5><i class="fas fa-circle-info mr-2"></i>Transaction Details — <span id="vt_txnno"></span></h5>
+                <button type="button" class="close" data-dismiss="modal">&times;</button>
+            </div>
+            <div class="modal-body">
+
+                <div class="section-label">Source</div>
+                <p style="margin:0 0 4px;font-weight:700;" id="vt_sourcelabel"></p>
+                <p style="margin:0 0 6px;color:#64748b;font-size:.83rem;" id="vt_sourcedetail"></p>
+                <a href="#" id="vt_sourcelink" class="vt-link" target="_blank" style="display:none;">
+                    <i class="fas fa-arrow-up-right-from-square"></i> Open source record
+                </a>
+
+                <div class="section-label" style="margin-top:18px;">Transaction Info</div>
+                <div class="vt-row"><span class="vt-k">Date</span><span class="vt-v" id="vt_date"></span></div>
+                <div class="vt-row"><span class="vt-k">Bank Account</span><span class="vt-v" id="vt_account"></span></div>
+                <div class="vt-row"><span class="vt-k">Direction</span><span class="vt-v" id="vt_direction"></span></div>
+                <div class="vt-row"><span class="vt-k">Amount</span><span class="vt-v" id="vt_amount"></span></div>
+                <div class="vt-row"><span class="vt-k">Balance After</span><span class="vt-v" id="vt_balance"></span></div>
+                <div class="vt-row"><span class="vt-k">Party</span><span class="vt-v" id="vt_party"></span></div>
+                <div class="vt-row"><span class="vt-k">Reference No.</span><span class="vt-v" id="vt_reference"></span></div>
+                <div class="vt-row"><span class="vt-k">Category</span><span class="vt-v" id="vt_category"></span></div>
+                <div class="vt-row"><span class="vt-k">Description</span><span class="vt-v" id="vt_description"></span></div>
+
+                <div class="section-label" style="margin-top:18px;">History</div>
+                <div class="vt-row"><span class="vt-k">Posted By</span><span class="vt-v" id="vt_createdby"></span></div>
+                <div class="vt-row"><span class="vt-k">Reconciliation</span><span class="vt-v" id="vt_recstatus"></span></div>
+                <div class="vt-row"><span class="vt-k">Reconciled By</span><span class="vt-v" id="vt_reconby"></span></div>
+                <div class="vt-row"><span class="vt-k">Last Edited By</span><span class="vt-v" id="vt_editedby"></span></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-light" data-dismiss="modal" style="border-radius:8px;">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{{-- ── EDIT TRANSACTION MODAL ── --}}
+<div class="modal fade fin-modal" id="editTxnModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <form class="modal-content" method="POST" id="editTxnForm" action="">
+            @csrf
+            @method('PUT')
+            <div class="modal-header" style="background: linear-gradient(135deg,#1e3a5f,#1e40af);">
+                <h5><i class="fas fa-pen mr-2"></i>Edit Transaction — <span id="et_txnno"></span></h5>
+                <button type="button" class="close" data-dismiss="modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:9px;padding:10px 14px;font-size:.8rem;color:#92400e;margin-bottom:16px;">
+                    <i class="fas fa-triangle-exclamation mr-1"></i>
+                    Amount/direction change karne par linked ledger/expense/cashflow aur bank balance automatically update ho jayega.
+                </div>
+                <div class="row">
+                    <div class="col-md-6 form-group">
+                        <label>Direction *</label>
+                        <select name="direction" id="et_direction" class="form-control" required>
+                            <option value="credit">Credit</option>
+                            <option value="debit">Debit</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6 form-group">
+                        <label>Amount *</label>
+                        <input type="number" step="0.01" min="0.01" name="amount" id="et_amount" class="form-control" required>
+                    </div>
+                    <div class="col-md-6 form-group">
+                        <label>Date *</label>
+                        <input type="date" name="transaction_date" id="et_date" class="form-control" required>
+                    </div>
+                    <div class="col-md-6 form-group">
+                        <label>Category</label>
+                        <input name="category" id="et_category" class="form-control">
+                    </div>
+                    <div class="col-md-6 form-group">
+                        <label>Party Name</label>
+                        <input name="party_name" id="et_party" class="form-control">
+                    </div>
+                    <div class="col-md-6 form-group">
+                        <label>Reference No.</label>
+                        <input name="reference_no" id="et_reference" class="form-control">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Description *</label>
+                    <textarea name="description" id="et_description" class="form-control" rows="3" required></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-light" data-dismiss="modal" style="border-radius:8px;">Cancel</button>
+                <button type="submit" class="btn btn-primary" style="border-radius:8px;font-weight:700;"><i class="fas fa-save mr-1"></i> Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{{-- ── DELETE CONFIRM MODAL (2-step) ── --}}
+<div class="modal fade fin-modal" id="deleteTxnModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header" style="background: linear-gradient(135deg,#7f1d1d,#dc2626);">
+                <h5><i class="fas fa-trash mr-2"></i>Delete Transaction</h5>
+                <button type="button" class="close" data-dismiss="modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="dt_step1">
+                    <p class="rc-step-title">Kya aap txn <strong id="dt_txnno1"></strong> ko delete karna chahte hain?</p>
+                    <p class="rc-step-hint">Iska amount, aur is se juda ledger/expense/cashflow entry — sab revert ho jayega.</p>
+                </div>
+                <div id="dt_step2" style="display:none;">
+                    <div class="rc-warning-box">
+                        <i class="fas fa-triangle-exclamation"></i>
+                        <div>
+                            <strong>Final Confirmation</strong><br>
+                            Txn <strong id="dt_txnno2"></strong> ka amount aur linked entry pura revert ho jayega. Ye action wapas nahi ho sakta.
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div class="rc-actions" id="dt_step1Actions">
+                    <button type="button" class="btn btn-light" data-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" onclick="dtShowStep(2)">Delete</button>
+                </div>
+                <div class="rc-actions" id="dt_step2Actions" style="display:none;">
+                    <button type="button" class="btn btn-light" onclick="dtShowStep(1)">Wapas Jayein</button>
+                    <button type="button" class="btn btn-danger" onclick="submitDeleteTxn()">Haan, Confirm Delete</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<form id="deleteTxnForm" method="POST" action="" style="display:none;">
+    @csrf
+    @method('DELETE')
+</form>
+@endif
+
 @endsection
 
 @push('scripts')
@@ -856,7 +1093,6 @@ body { background: var(--st-bg) !important; }
         const dir     = dirSel?.value;
         const amt     = parseFloat(amtInput?.value || 0);
 
-        // Balance box
         if (opt && opt.value) {
             balBox.style.display = 'block';
             balInfo.className    = 'balance-info-box ' + (dir === 'credit' ? 'bib-credit' : 'bib-debit');
@@ -865,7 +1101,6 @@ body { background: var(--st-bg) !important; }
             balBox.style.display = 'none';
         }
 
-        // Preview box
         if (amt > 0 && opt && opt.value) {
             prevBox.style.display  = 'flex';
             const isDebit          = dir === 'debit';
@@ -886,10 +1121,13 @@ body { background: var(--st-bg) !important; }
 
 // ── Reconciliation: 2-step confirm popup ────────────────────────
 (function () {
+    const reconcileModalEl = document.getElementById('reconcileModal');
+    if (!reconcileModalEl) return;
+
     window.openReconcileModal = function (btn) {
-        const url        = btn.dataset.url;
-        const isReconciled = btn.dataset.status === 'reconciled';
-        const txnNo      = btn.dataset.txn || '';
+        const url           = btn.dataset.url;
+        const isReconciled  = btn.dataset.status === 'reconciled';
+        const txnNo         = btn.dataset.txn || '';
 
         document.getElementById('reconcileForm').action = url;
         document.getElementById('reconcileTxnNo').textContent = txnNo;
@@ -917,10 +1155,80 @@ body { background: var(--st-bg) !important; }
         document.getElementById('reconcileForm').submit();
     };
 
-    // Reset back to step 1 whenever the modal is closed without confirming
     $('#reconcileModal').on('hidden.bs.modal', function () {
         rcShowStep(1);
     });
+})();
+
+// ── View / Edit / Delete Transaction ────────────────────────────
+(function () {
+    const viewModalEl = document.getElementById('viewTxnModal');
+    if (!viewModalEl) return; // non-admin users don't have these modals in DOM
+
+    window.openViewModal = function (btn) {
+        const d = btn.dataset;
+        document.getElementById('vt_txnno').textContent        = d.txnno || '-';
+        document.getElementById('vt_sourcelabel').textContent  = d.sourcelabel || '-';
+        document.getElementById('vt_sourcedetail').textContent = d.sourcedetail || '-';
+        document.getElementById('vt_date').textContent         = d.date || '-';
+        document.getElementById('vt_account').textContent      = d.account || '-';
+        document.getElementById('vt_direction').textContent    = d.direction || '-';
+        document.getElementById('vt_amount').textContent       = d.amount || '-';
+        document.getElementById('vt_balance').textContent      = d.balance || '-';
+        document.getElementById('vt_party').textContent        = d.party || '-';
+        document.getElementById('vt_reference').textContent    = d.reference || '-';
+        document.getElementById('vt_category').textContent     = d.category || '-';
+        document.getElementById('vt_description').textContent  = d.description || '-';
+        document.getElementById('vt_createdby').textContent    = (d.createdby || '-') + (d.createdat ? ' (' + d.createdat + ')' : '');
+        document.getElementById('vt_recstatus').textContent    = d.recstatus || '-';
+        document.getElementById('vt_reconby').textContent      = (d.reconby || '-') + (d.reconat && d.reconat !== '-' ? ' (' + d.reconat + ')' : '');
+        document.getElementById('vt_editedby').textContent     = (d.editedby || '-') + (d.editedat && d.editedat !== '-' ? ' (' + d.editedat + ')' : '');
+
+        const link = document.getElementById('vt_sourcelink');
+        if (d.sourcelink) {
+            link.href = d.sourcelink;
+            link.style.display = 'inline-flex';
+        } else {
+            link.style.display = 'none';
+        }
+
+        $('#viewTxnModal').modal('show');
+    };
+
+    window.openEditModal = function (btn) {
+        const d = btn.dataset;
+        document.getElementById('editTxnForm').action    = d.url;
+        document.getElementById('et_txnno').textContent  = d.txnno || '';
+        document.getElementById('et_direction').value    = d.direction || 'credit';
+        document.getElementById('et_amount').value       = d.amount || '';
+        document.getElementById('et_date').value         = d.date || '';
+        document.getElementById('et_category').value     = d.category || '';
+        document.getElementById('et_party').value        = d.party || '';
+        document.getElementById('et_reference').value    = d.reference || '';
+        document.getElementById('et_description').value  = d.description || '';
+        $('#editTxnModal').modal('show');
+    };
+
+    window.openDeleteModal = function (btn) {
+        document.getElementById('deleteTxnForm').action  = btn.dataset.url;
+        document.getElementById('dt_txnno1').textContent = btn.dataset.txnno || '';
+        document.getElementById('dt_txnno2').textContent = btn.dataset.txnno || '';
+        dtShowStep(1);
+        $('#deleteTxnModal').modal('show');
+    };
+
+    window.dtShowStep = function (step) {
+        document.getElementById('dt_step1').style.display        = step === 1 ? 'block' : 'none';
+        document.getElementById('dt_step2').style.display        = step === 2 ? 'block' : 'none';
+        document.getElementById('dt_step1Actions').style.display = step === 1 ? 'flex'  : 'none';
+        document.getElementById('dt_step2Actions').style.display = step === 2 ? 'flex'  : 'none';
+    };
+
+    window.submitDeleteTxn = function () {
+        document.getElementById('deleteTxnForm').submit();
+    };
+
+    $('#deleteTxnModal').on('hidden.bs.modal', function () { dtShowStep(1); });
 })();
 </script>
 @endpush
