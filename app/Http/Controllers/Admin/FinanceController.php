@@ -1168,7 +1168,7 @@ class FinanceController extends Controller
             'created_by'            => $userId,
         ]);
     }
-    
+
     //  TRANSACTION EDIT / DELETE (Admin only — cascades to source + balance)
     // ════════════════════════════════════════════════════════════════════
 
@@ -1317,13 +1317,21 @@ class FinanceController extends Controller
     }
 
     /**
-     * Bank account ke opening balance se leke, saari transactions ko
-     * date-order me replay karke current_balance aur har txn ka
-     * balance_after dobara sahi karta hai. Edit/Delete ke baad hamesha call karo.
+     * Bank account ki saari transactions ko date-order me replay karke
+     * current_balance aur har txn ka balance_after dobara sahi karta hai.
+     * Edit/Delete ke baad hamesha call karo.
+     *
+     * NOTE: Seed 0.0 se start hota hai kyunki Opening Balance khud bhi
+     * ek BankTransaction row hai (category 'Opening Balance', direction
+     * 'credit', amount = opening_balance). Agar yahan seed
+     * $account->opening_balance rakha jaaye, to loop me Opening Balance
+     * wali transaction dobara add ho jaati hai aur balance double
+     * (opening_balance x 2) ho jaata hai — yahi wo bug tha jisse
+     * "opening balance 71,745 dala tha par 143,490 show ho raha tha".
      */
     private function recalculateBalanceChain(BankAccount $account): void
     {
-        $balance = (float) $account->opening_balance;
+        $balance = 0.0;
 
         BankTransaction::where('bank_account_id', $account->id)
             ->orderBy('transaction_date')
