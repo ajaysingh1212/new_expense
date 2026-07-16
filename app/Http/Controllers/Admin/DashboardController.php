@@ -13,12 +13,14 @@ use App\Models\Item;
 use App\Models\Ledger;
 use App\Models\User;
 use App\Models\UserNotification;
+use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Spatie\Permission\Models\Role;
 
 
 class DashboardController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
         $user = auth()->user();
         $stats = [];
@@ -174,8 +176,10 @@ class DashboardController extends Controller
 
         $users = User::orderBy('name')->get();
         $roles = Role::orderBy('name')->pluck('name');
+        $isReport = $request->input('view') === 'report';
+        $reportData = $this->buildDashboardReport($request, $ledgers);
 
-        return view('admin.dashboard.index', compact(
+        return view('admin.dashboard.index', array_merge(compact(
             'stats',
             'recentActivity',
             'recentItems',
@@ -196,6 +200,241 @@ class DashboardController extends Controller
             'awaitingReceipts',
             'users',
             'roles'
-        ));
+        ), $reportData, [
+            'isReport' => $isReport,
+        ]));
+    }
+
+    private function buildDashboardReport(Request $request, $ledgers): array
+    {
+        $reportType = $request->input('report_type', 'all');
+        $reportType = in_array($reportType, ['all', 'expense', 'cash_in'], true) ? $reportType : 'all';
+        $ledgerId = $request->integer('report_ledger_id');
+        $period = $request->input('report_period', 'this_month');
+        $period = in_array($period, ['today', 'yesterday', 'this_week', 'this_month', '3_month', '6_month', '9_month', 'this_year', 'custom'], true)
+            ? $period
+            : 'this_month';
+
+        [$from, $to, $periodLabel] = $this->resolveReportPeriod($request, $period);
+
+        $baseQuery = BankTransaction::query()
+            ->with([
+                'bankAccount',
+                'creator',
+                'transactionable' => function ($morphTo) {
+                    $morphTo->morphWith([
+                        ExpensePayment::class => ['expensePlan.ledger', 'bankAccount'],
+                        CashflowPlan::class => ['ledger', 'bankAccount'],
+                    ]);
+                },
+            ])
+            ->whereDate('transaction_date', '>=', $from)
+            ->whereDate('transaction_date', '<=', $to)
+            ->whereHasMorph(
+                'transactionable',
+                [ExpensePayment::class, CashflowPlan::class],
+                function ($query, string $type) use ($ledgerId) {
+                    if ($type === ExpensePayment::class) {
+                        $query->whereHas('expensePlan', function ($planQuery) use ($ledgerId) {
+                            if ($ledgerId) {
+                                $planQuery->where('ledger_id', $ledgerId);
+                            }
+                        });
+                        return;
+                    }
+
+                    if ($ledgerId) {
+                        $query->where('ledger_id', $ledgerId);
+                    }
+                }
+            );
+
+        if ($reportType === 'expense') {
+            $baseQuery->where('transactionable_type', ExpensePayment::class);
+        } elseif ($reportType === 'cash_in') {
+            $baseQuery->where('transactionable_type', CashflowPlan::class);
+        }
+
+        $transactions = $baseQuery
+            ->latest('transaction_date')
+            ->latest('id')
+            ->get();
+
+        $rows = $transactions->map(fn ($txn) => $this->mapDashboardReportRow($txn))->values();
+
+        $totalExpense = (float) $rows->where('kind', 'expense')->sum('amount');
+        $totalCashIn = (float) $rows->where('kind', 'cash_in')->sum('amount');
+        $netMovement = $totalCashIn - $totalExpense;
+
+        $summaryCards = [
+            'transactions' => $rows->count(),
+            'expense_total' => $totalExpense,
+            'cashin_total' => $totalCashIn,
+            'net_total' => $netMovement,
+            'expense_count' => $rows->where('kind', 'expense')->count(),
+            'cashin_count' => $rows->where('kind', 'cash_in')->count(),
+        ];
+
+        $byDate = $rows->groupBy('date_key')->sortKeys();
+        $dateLabels = $byDate->keys()->values();
+        $dailyExpense = $dateLabels->map(fn ($date) => (float) ($byDate[$date]->where('kind', 'expense')->sum('amount')));
+        $dailyCashIn = $dateLabels->map(fn ($date) => (float) ($byDate[$date]->where('kind', 'cash_in')->sum('amount')));
+
+        $pieLabels = ['Expense', 'Cash In'];
+        $pieValues = [(float) $totalExpense, (float) $totalCashIn];
+
+        $candleSeries = [];
+        $runningBalance = 0.0;
+        foreach ($dateLabels as $dateKey) {
+            $dayRows = $byDate[$dateKey]->sortBy('sort_key')->values();
+            $open = $runningBalance;
+            $high = $runningBalance;
+            $low = $runningBalance;
+            foreach ($dayRows as $row) {
+                $runningBalance += $row['signed_amount'];
+                $high = max($high, $runningBalance);
+                $low = min($low, $runningBalance);
+            }
+            $close = $runningBalance;
+            $candleSeries[] = [
+                'x' => $dateKey,
+                'y' => [round($open, 2), round($high, 2), round($low, 2), round($close, 2)],
+            ];
+        }
+
+        $statusCounts = $rows->groupBy('status_key')->map->count();
+        $radarLabels = ['Draft', 'Submitted', 'Approved', 'Partial', 'Paid / Received', 'Rejected'];
+        $radarValues = [
+            (int) ($statusCounts['draft'] ?? 0),
+            (int) ($statusCounts['submitted'] ?? 0),
+            (int) ($statusCounts['approved'] ?? 0),
+            (int) ($statusCounts['partial'] ?? 0),
+            (int) (($statusCounts['paid'] ?? 0) + ($statusCounts['received'] ?? 0)),
+            (int) ($statusCounts['rejected'] ?? 0),
+        ];
+
+        $topLedgers = $rows->groupBy('ledger_name')
+            ->map(fn ($group, $name) => [
+                'name' => $name,
+                'amount' => (float) $group->sum('amount'),
+                'count' => $group->count(),
+            ])
+            ->sortByDesc('amount')
+            ->take(6)
+            ->values();
+
+        return [
+            'reportMode' => true,
+            'reportPeriod' => $period,
+            'reportPeriodLabel' => $periodLabel,
+            'reportType' => $reportType,
+            'reportLedgerId' => $ledgerId,
+            'reportLedger' => $ledgerId ? $ledgers->firstWhere('id', $ledgerId) : null,
+            'reportFrom' => $from->toDateString(),
+            'reportTo' => $to->toDateString(),
+            'reportRows' => $rows,
+            'reportTransactions' => $transactions,
+            'reportSummary' => $summaryCards,
+            'reportFilters' => [
+                'type' => $reportType,
+                'period' => $period,
+                'ledger_id' => $ledgerId,
+            ],
+            'reportChartData' => [
+                'pie' => [
+                    'labels' => $pieLabels,
+                    'values' => $pieValues,
+                ],
+                'wave' => [
+                    'labels' => $dateLabels->map(fn ($date) => Carbon::parse($date)->format('d M'))->values(),
+                    'expense' => $dailyExpense->values(),
+                    'cash_in' => $dailyCashIn->values(),
+                ],
+                'candle' => [
+                    'series' => $candleSeries,
+                ],
+                'radar' => [
+                    'labels' => $radarLabels,
+                    'values' => $radarValues,
+                ],
+                'topLedgers' => $topLedgers,
+            ],
+        ];
+    }
+
+    private function resolveReportPeriod(Request $request, string $period): array
+    {
+        $now = Carbon::now();
+
+        if ($period === 'custom') {
+            $customFrom = Carbon::parse($request->input('report_from', $now->copy()->startOfMonth()->toDateString()))->startOfDay();
+            $customTo = Carbon::parse($request->input('report_to', $now->copy()->toDateString()))->endOfDay();
+
+            if ($customFrom->gt($customTo)) {
+                [$customFrom, $customTo] = [$customTo, $customFrom];
+            }
+
+            return [$customFrom, $customTo, 'Custom Range'];
+        }
+
+        return match ($period) {
+            'today' => [$now->copy()->startOfDay(), $now->copy()->endOfDay(), 'Today'],
+            'yesterday' => [$now->copy()->subDay()->startOfDay(), $now->copy()->subDay()->endOfDay(), 'Yesterday'],
+            'this_week' => [$now->copy()->startOfWeek(), $now->copy()->endOfDay(), 'This Week'],
+            'this_month' => [$now->copy()->startOfMonth(), $now->copy()->endOfDay(), 'This Month'],
+            '3_month' => [$now->copy()->subMonthsNoOverflow(2)->startOfMonth(), $now->copy()->endOfDay(), 'Last 3 Months'],
+            '6_month' => [$now->copy()->subMonthsNoOverflow(5)->startOfMonth(), $now->copy()->endOfDay(), 'Last 6 Months'],
+            '9_month' => [$now->copy()->subMonthsNoOverflow(8)->startOfMonth(), $now->copy()->endOfDay(), 'Last 9 Months'],
+            'this_year' => [$now->copy()->startOfYear(), $now->copy()->endOfDay(), 'This Year'],
+            default => [$now->copy()->startOfMonth(), $now->copy()->endOfDay(), 'This Month'],
+        };
+    }
+
+    private function mapDashboardReportRow(BankTransaction $txn): array
+    {
+        $kind = 'other';
+        $title = $txn->description ?: $txn->party_name ?: 'Transaction';
+        $ledgerName = $txn->category ?: '-';
+        $status = $txn->reconciliation_status ?: 'unreconciled';
+        $statusKey = 'draft';
+
+        if ($txn->transactionable_type === ExpensePayment::class && $txn->transactionable) {
+            $kind = 'expense';
+            $payment = $txn->transactionable;
+            $title = $payment->expensePlan?->title ?: $title;
+            $ledgerName = $payment->expensePlan?->ledger?->name ?: 'Expense';
+            $status = $payment->status ?: $status;
+            $statusKey = $payment->status ?: 'draft';
+        } elseif ($txn->transactionable_type === CashflowPlan::class && $txn->transactionable) {
+            $kind = 'cash_in';
+            $plan = $txn->transactionable;
+            $title = $plan->title ?: $title;
+            $ledgerName = $plan->ledger?->name ?: 'Cash In';
+            $status = $plan->status ?: $status;
+            $statusKey = $plan->status ?: 'draft';
+        }
+
+        return [
+            'id' => $txn->id,
+            'kind' => $kind,
+            'title' => $title,
+            'ledger_name' => $ledgerName,
+            'bank_name' => $txn->bankAccount?->name ?: '-',
+            'direction' => $txn->direction,
+            'direction_label' => $txn->direction === 'credit' ? 'Cash In' : 'Expense',
+            'amount' => (float) $txn->amount,
+            'signed_amount' => $txn->direction === 'credit' ? (float) $txn->amount : -(float) $txn->amount,
+            'balance_after' => (float) $txn->balance_after,
+            'status' => $status,
+            'status_key' => strtolower((string) $statusKey),
+            'date' => optional($txn->transaction_date)->format('d M Y'),
+            'date_key' => optional($txn->transaction_date)->toDateString(),
+            'sort_key' => $txn->transaction_date?->timestamp ?? $txn->id,
+            'reference_no' => $txn->reference_no ?: '-',
+            'party_name' => $txn->party_name ?: '-',
+            'description' => $txn->description ?: '-',
+            'reconciliation_status' => $txn->reconciliation_status ?: 'unreconciled',
+            'created_by' => $txn->creator?->name ?: '-',
+        ];
     }
 }
