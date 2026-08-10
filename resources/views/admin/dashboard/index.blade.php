@@ -366,6 +366,66 @@
         font-size: .8rem;
     }
 
+    .quick-action-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+    }
+
+    .quick-action-btn {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+        padding: 14px 16px;
+        border-radius: 18px;
+        border: 1px solid #dbe3ef;
+        background: #fff;
+        color: #0f172a;
+        font-weight: 800;
+        text-decoration: none !important;
+        box-shadow: 0 10px 24px rgba(15,23,42,.05);
+        transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+    }
+
+    .quick-action-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 16px 28px rgba(15,23,42,.09);
+        border-color: #c9d6e6;
+        color: #0f172a;
+    }
+
+    .quick-action-btn i {
+        width: 42px;
+        height: 42px;
+        border-radius: 14px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        flex-shrink: 0;
+    }
+
+    .qa-ledger i { background: linear-gradient(135deg, #4f46e5, #2563eb); }
+    .qa-bank i { background: linear-gradient(135deg, #0f766e, #059669); }
+    .qa-cashin i { background: linear-gradient(135deg, #15803d, #22c55e); }
+    .qa-expense i { background: linear-gradient(135deg, #b45309, #d97706); }
+    .qa-manual i { background: linear-gradient(135deg, #1d4ed8, #2563eb); }
+    .qa-report i { background: linear-gradient(135deg, #7c3aed, #4f46e5); }
+
+    .quick-action-label {
+        font-size: .88rem;
+        line-height: 1.15;
+    }
+
+    .quick-action-sub {
+        display: block;
+        margin-top: 2px;
+        font-size: .75rem;
+        font-weight: 600;
+        color: var(--dash-muted);
+    }
+
     .custom-range-wrap {
         display: none;
     }
@@ -779,9 +839,40 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="mt-2">
-                            <a href="{{ route('admin.dashboard', ['view' => 'report']) }}" class="btn btn-primary px-4">
-                                <i class="fas fa-file-chart-column mr-1"></i> Open report view
+                        <div class="quick-action-grid mt-3">
+                            @can('finance.ledgers.create')
+                                <a href="#" class="quick-action-btn qa-ledger" data-toggle="modal" data-target="#ledgerModal">
+                                    <i class="fas fa-book"></i>
+                                    <span class="quick-action-label">New Ledger<span class="quick-action-sub">Create party / salary / expense ledger</span></span>
+                                </a>
+                            @endcan
+                            @can('finance.bank.create')
+                                <a href="#" class="quick-action-btn qa-bank" data-toggle="modal" data-target="#bankModal">
+                                    <i class="fas fa-building-columns"></i>
+                                    <span class="quick-action-label">New Account<span class="quick-action-sub">Add bank, cash, or wallet account</span></span>
+                                </a>
+                            @endcan
+                            @can('finance.cashflows.create')
+                                <a href="#" class="quick-action-btn qa-cashin" data-toggle="modal" data-target="#cashflowModal">
+                                    <i class="fas fa-arrow-trend-up"></i>
+                                    <span class="quick-action-label">Plan Cash In<span class="quick-action-sub">Create incoming cashflow plan</span></span>
+                                </a>
+                            @endcan
+                            @can('finance.expenses.create')
+                                <a href="#" class="quick-action-btn qa-expense" data-toggle="modal" data-target="#expenseModal">
+                                    <i class="fas fa-receipt"></i>
+                                    <span class="quick-action-label">Plan Expense<span class="quick-action-sub">Create expense or salary plan</span></span>
+                                </a>
+                            @endcan
+                            @can('finance.approve')
+                                <a href="#" class="quick-action-btn qa-manual" data-toggle="modal" data-target="#manualEntryModal">
+                                    <i class="fas fa-pen-to-square"></i>
+                                    <span class="quick-action-label">Manual Entry<span class="quick-action-sub">Post correction or bank charge</span></span>
+                                </a>
+                            @endcan
+                            <a href="{{ route('admin.dashboard', ['view' => 'report']) }}" class="quick-action-btn qa-report">
+                                <i class="fas fa-file-chart-column"></i>
+                                <span class="quick-action-label">Open Report<span class="quick-action-sub">Detailed ledger-wise finance view</span></span>
                             </a>
                         </div>
                     </div>
@@ -813,6 +904,13 @@
         </div>
     @endif
 </div>
+
+@include('admin.finance.partials.modals', [
+    'ledgers' => $ledgers,
+    'expenseLedgers' => $expenseLedgers,
+    'incomeLedgers' => $incomeLedgers,
+    'bankAccounts' => $bankAccounts,
+])
 @endsection
 
 @push('scripts')
