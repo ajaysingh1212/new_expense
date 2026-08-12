@@ -489,16 +489,53 @@
     <div class="dash-hero">
         <div class="row align-items-end">
             <div class="col-lg-8">
-                <span class="dash-kicker">
-                    <i class="fas fa-chart-line"></i>
-                    {{ $isReport ? 'Report mode' : 'Overview mode' }}
-                </span>
-                <h1 class="dash-title">
-                    {{ $isReport ? 'Ledger-wise finance report center' : 'Admin dashboard overview' }}
-                </h1>
-                <p class="dash-subtitle">
-                    {{ $isReport ? 'Ledger aur date range select karke expense, cash in, chart analytics aur detailed transactions ek hi screen par dekhiye.' : 'Quick summary, recent finance activity aur shortcut actions ek clean overview me.' }}
-                </p>
+                @if($isReport)
+                    <span class="dash-kicker">
+                        <i class="fas fa-chart-line"></i>
+                        Report mode
+                    </span>
+                    <h1 class="dash-title">Ledger-wise finance report center</h1>
+                    <p class="dash-subtitle">
+                        Ledger aur date range select karke expense, cash in, chart analytics aur detailed transactions ek hi screen par dekhiye.
+                    </p>
+                @else
+                    <div class="quick-action-grid">
+                        @can('finance.ledgers.create')
+                            <a href="#" class="quick-action-btn qa-ledger" data-toggle="modal" data-target="#ledgerModal">
+                                <i class="fas fa-book"></i>
+                                <span class="quick-action-label">New Ledger<span class="quick-action-sub">Create party / salary / expense ledger</span></span>
+                            </a>
+                        @endcan
+                        @can('finance.bank.create')
+                            <a href="#" class="quick-action-btn qa-bank" data-toggle="modal" data-target="#bankModal">
+                                <i class="fas fa-building-columns"></i>
+                                <span class="quick-action-label">New Account<span class="quick-action-sub">Add bank, cash, or wallet account</span></span>
+                            </a>
+                        @endcan
+                        @can('finance.cashflows.create')
+                            <a href="#" class="quick-action-btn qa-cashin" data-toggle="modal" data-target="#cashflowModal">
+                                <i class="fas fa-arrow-trend-up"></i>
+                                <span class="quick-action-label">Payment In<span class="quick-action-sub">Post direct incoming payment</span></span>
+                            </a>
+                        @endcan
+                        @can('finance.expenses.create')
+                            <a href="#" class="quick-action-btn qa-expense" data-toggle="modal" data-target="#expenseModal">
+                                <i class="fas fa-receipt"></i>
+                                <span class="quick-action-label">Expense<span class="quick-action-sub">Post direct expense transaction</span></span>
+                            </a>
+                        @endcan
+                        @can('finance.approve')
+                            <a href="#" class="quick-action-btn qa-manual" data-toggle="modal" data-target="#manualEntryModal">
+                                <i class="fas fa-pen-to-square"></i>
+                                <span class="quick-action-label">Manual Entry<span class="quick-action-sub">Post correction or bank charge</span></span>
+                            </a>
+                        @endcan
+                        <a href="{{ route('admin.finance.statement.index') }}" class="quick-action-btn qa-report">
+                            <i class="fas fa-file-chart-column"></i>
+                            <span class="quick-action-label">Statement<span class="quick-action-sub">Open bank statement page</span></span>
+                        </a>
+                    </div>
+                @endif
             </div>
             <div class="col-lg-4 mt-3 mt-lg-0">
                 <div class="dash-switch">
@@ -838,42 +875,6 @@
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                        <div class="quick-action-grid mt-3">
-                            @can('finance.ledgers.create')
-                                <a href="#" class="quick-action-btn qa-ledger" data-toggle="modal" data-target="#ledgerModal">
-                                    <i class="fas fa-book"></i>
-                                    <span class="quick-action-label">New Ledger<span class="quick-action-sub">Create party / salary / expense ledger</span></span>
-                                </a>
-                            @endcan
-                            @can('finance.bank.create')
-                                <a href="#" class="quick-action-btn qa-bank" data-toggle="modal" data-target="#bankModal">
-                                    <i class="fas fa-building-columns"></i>
-                                    <span class="quick-action-label">New Account<span class="quick-action-sub">Add bank, cash, or wallet account</span></span>
-                                </a>
-                            @endcan
-                            @can('finance.cashflows.create')
-                                <a href="#" class="quick-action-btn qa-cashin" data-toggle="modal" data-target="#cashflowModal">
-                                    <i class="fas fa-arrow-trend-up"></i>
-                                    <span class="quick-action-label">Payment In<span class="quick-action-sub">Post direct incoming payment</span></span>
-                                </a>
-                            @endcan
-                            @can('finance.expenses.create')
-                                <a href="#" class="quick-action-btn qa-expense" data-toggle="modal" data-target="#expenseModal">
-                                    <i class="fas fa-receipt"></i>
-                                    <span class="quick-action-label">Expense<span class="quick-action-sub">Post direct expense transaction</span></span>
-                                </a>
-                            @endcan
-                            @can('finance.approve')
-                                <a href="#" class="quick-action-btn qa-manual" data-toggle="modal" data-target="#manualEntryModal">
-                                    <i class="fas fa-pen-to-square"></i>
-                                    <span class="quick-action-label">Manual Entry<span class="quick-action-sub">Post correction or bank charge</span></span>
-                                </a>
-                            @endcan
-                            <a href="{{ route('admin.finance.statement.index') }}" class="quick-action-btn qa-report">
-                                <i class="fas fa-file-chart-column"></i>
-                                <span class="quick-action-label">Statement<span class="quick-action-sub">Open bank statement page</span></span>
-                            </a>
                         </div>
                     </div>
                 </div>
