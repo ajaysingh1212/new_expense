@@ -513,15 +513,15 @@
                             </a>
                         @endcan --}}
                         @can('finance.cashflows.create')
-                            <a href="#" class="quick-action-btn qa-cashin" data-toggle="modal" data-target="#cashflowModal">
+                            <a href="#" class="quick-action-btn qa-cashin" data-toggle="modal" data-target="#cashflowModal" style="background: linear-gradient(135deg, #15803d, #22c55e); color: #fff;">
                                 <i class="fas fa-arrow-trend-up"></i>
-                                <span class="quick-action-label">Payment In<span class="quick-action-sub">Post direct incoming payment</span></span>
+                                <span class="quick-action-label">Payment In <br><span class="quick-action-label">Post direct incoming payment</span></span>
                             </a>
                         @endcan
                         @can('finance.expenses.create')
-                            <a href="#" class="quick-action-btn qa-expense" data-toggle="modal" data-target="#expenseModal">
+                            <a href="#" class="quick-action-btn qa-expense" data-toggle="modal" data-target="#expenseModal" style="background: linear-gradient(135deg, #dc2626, #ef4444); color: #fff;">
                                 <i class="fas fa-receipt"></i>
-                                <span class="quick-action-label">Expense<span class="quick-action-sub">Post direct expense transaction</span></span>
+                                <span class="quick-action-label">Expense <br><span class="quick-action-label">Post direct expense transaction</span></span>
                             </a>
                         @endcan
                         {{-- @can('finance.approve')
