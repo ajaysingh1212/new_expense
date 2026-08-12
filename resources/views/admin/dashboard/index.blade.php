@@ -500,18 +500,18 @@
                     </p>
                 @else
                     <div class="quick-action-grid">
-                        @can('finance.ledgers.create')
+                        {{-- @can('finance.ledgers.create')
                             <a href="#" class="quick-action-btn qa-ledger" data-toggle="modal" data-target="#ledgerModal">
                                 <i class="fas fa-book"></i>
                                 <span class="quick-action-label">New Ledger<span class="quick-action-sub">Create party / salary / expense ledger</span></span>
                             </a>
-                        @endcan
-                        @can('finance.bank.create')
+                        @endcan --}}
+                        {{-- @can('finance.bank.create')
                             <a href="#" class="quick-action-btn qa-bank" data-toggle="modal" data-target="#bankModal">
                                 <i class="fas fa-building-columns"></i>
                                 <span class="quick-action-label">New Account<span class="quick-action-sub">Add bank, cash, or wallet account</span></span>
                             </a>
-                        @endcan
+                        @endcan --}}
                         @can('finance.cashflows.create')
                             <a href="#" class="quick-action-btn qa-cashin" data-toggle="modal" data-target="#cashflowModal">
                                 <i class="fas fa-arrow-trend-up"></i>
@@ -524,16 +524,16 @@
                                 <span class="quick-action-label">Expense<span class="quick-action-sub">Post direct expense transaction</span></span>
                             </a>
                         @endcan
-                        @can('finance.approve')
+                        {{-- @can('finance.approve')
                             <a href="#" class="quick-action-btn qa-manual" data-toggle="modal" data-target="#manualEntryModal">
                                 <i class="fas fa-pen-to-square"></i>
                                 <span class="quick-action-label">Manual Entry<span class="quick-action-sub">Post correction or bank charge</span></span>
                             </a>
-                        @endcan
-                        <a href="{{ route('admin.finance.statement.index') }}" class="quick-action-btn qa-report">
+                        @endcan --}}
+                        {{-- <a href="{{ route('admin.finance.statement.index') }}" class="quick-action-btn qa-report">
                             <i class="fas fa-file-chart-column"></i>
                             <span class="quick-action-label">Statement<span class="quick-action-sub">Open bank statement page</span></span>
-                        </a>
+                        </a> --}}
                     </div>
                 @endif
             </div>
