@@ -142,8 +142,9 @@
 <div class="modal fade fin-modal" id="cashflowModal" tabindex="-1">
     <div class="modal-dialog modal-lg modal-dialog-centered">
         <form class="modal-content" method="POST" enctype="multipart/form-data" action="{{ route('admin.finance.cashflows.store') }}">@csrf
+            @if(!empty($directFinanceActions))<input type="hidden" name="direct_post" value="1">@endif
             <div class="modal-header" style="background:linear-gradient(135deg,#064e3b,#059669);">
-                <h5><i class="fas fa-arrow-trend-up mr-2"></i> Plan Cash Inflow</h5>
+                <h5><i class="fas fa-arrow-trend-up mr-2"></i> {{ !empty($directFinanceActions) ? 'Direct Payment In' : 'Plan Cash Inflow' }}</h5>
                 <button type="button" class="close" data-dismiss="modal">&times;</button>
             </div>
             <div class="modal-body">
@@ -192,6 +193,7 @@
                         <label>Reference No.</label>
                         <input name="reference_no" class="form-control" placeholder="Invoice / cheque no.">
                     </div>
+                    @empty($directFinanceActions)
                     <div class="col-md-4 form-group">
                         <label>Status *</label>
                         <select name="status" class="form-control" required>
@@ -199,6 +201,7 @@
                             <option value="draft">Save as Draft</option>
                         </select>
                     </div>
+                    @endempty
                     <div class="col-md-8 form-group">
                         <label>Attachment <span style="color:#94a3b8;font-weight:400;text-transform:none;">(jpg, png, pdf)</span></label>
                         <input name="attachment" type="file" class="form-control attachment-input" accept=".jpg,.jpeg,.png,.pdf,.webp">
@@ -216,7 +219,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-light" data-dismiss="modal">Cancel</button>
-                <button type="submit" class="btn btn-success" style="border-radius:8px;font-weight:600;"><i class="fas fa-paper-plane mr-1"></i> Save Cashflow Plan</button>
+                <button type="submit" class="btn btn-success" style="border-radius:8px;font-weight:600;"><i class="fas fa-paper-plane mr-1"></i> {{ !empty($directFinanceActions) ? 'Post Payment In' : 'Save Cashflow Plan' }}</button>
             </div>
         </form>
     </div>
@@ -228,8 +231,9 @@
 <div class="modal fade fin-modal" id="expenseModal" tabindex="-1">
     <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
         <form class="modal-content" method="POST" enctype="multipart/form-data" action="{{ route('admin.finance.expenses.store') }}">@csrf
+            @if(!empty($directFinanceActions))<input type="hidden" name="direct_post" value="1">@endif
             <div class="modal-header" style="background:linear-gradient(135deg,#78350f,#d97706);">
-                <h5><i class="fas fa-receipt mr-2"></i> Create Expense / Salary Plan</h5>
+                <h5><i class="fas fa-receipt mr-2"></i> {{ !empty($directFinanceActions) ? 'Direct Expense / Salary Payment' : 'Create Expense / Salary Plan' }}</h5>
                 <button type="button" class="close" data-dismiss="modal">&times;</button>
             </div>
             <div class="modal-body">
@@ -268,6 +272,7 @@
                             <option value="low">⚪ Low</option>
                         </select>
                     </div>
+                    @empty($directFinanceActions)
                     <div class="col-md-3 form-group">
                         <label>Status *</label>
                         <select name="status" class="form-control" required>
@@ -275,6 +280,7 @@
                             <option value="draft">Save as Draft</option>
                         </select>
                     </div>
+                    @endempty
                 </div>
 
                 {{-- Section: Amount Calculation --}}
@@ -321,8 +327,8 @@
                         <input name="due_date" type="date" class="form-control">
                     </div>
                     <div class="col-md-4 form-group">
-                        <label>Preferred Bank Account</label>
-                        <select name="bank_account_id" class="form-control">
+                        <label>{{ !empty($directFinanceActions) ? 'Bank Account *' : 'Preferred Bank Account' }}</label>
+                        <select name="bank_account_id" class="form-control" @if(!empty($directFinanceActions)) required @endif>
                             <option value="">— Decide while paying —</option>
                             @foreach($bankAccounts ?? [] as $account)
                             <option value="{{ $account->id }}">{{ $account->name }} · Rs {{ number_format((float)$account->current_balance, 0) }}</option>
@@ -348,7 +354,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-light" data-dismiss="modal">Cancel</button>
-                <button type="submit" class="btn btn-warning" style="border-radius:8px;font-weight:600;color:#fff;"><i class="fas fa-save mr-1"></i> Save Expense Plan</button>
+                <button type="submit" class="btn btn-warning" style="border-radius:8px;font-weight:600;color:#fff;"><i class="fas fa-save mr-1"></i> {{ !empty($directFinanceActions) ? 'Post Expense' : 'Save Expense Plan' }}</button>
             </div>
         </form>
     </div>

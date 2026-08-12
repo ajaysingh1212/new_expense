@@ -549,6 +549,8 @@ class FinanceController extends Controller
 
     public function storeCashflow(Request $request)
     {
+        $isDirectPost = $request->boolean('direct_post');
+
         $data = $request->validate([
             'ledger_id'       => ['nullable', 'exists:ledgers,id'],
             'bank_account_id' => ['required', 'exists:bank_accounts,id'],
@@ -557,13 +559,46 @@ class FinanceController extends Controller
             'reference_no'    => ['nullable', 'string', 'max:100'],
             'expected_amount' => ['required', 'numeric', 'min:1'],
             'expected_date'   => ['required', 'date'],
-            'status'          => ['required', Rule::in(['draft','submitted'])],
+            'status'          => [$isDirectPost ? 'nullable' : 'required', Rule::in(['draft','submitted'])],
             'attachment'      => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf,webp', 'max:4096'],
             'notes'           => ['nullable', 'string', 'max:1500'],
         ]);
 
         $data['attachment_path'] = $this->storeAttachment($request);
         unset($data['attachment']);
+
+        if ($isDirectPost) {
+            unset($data['status']);
+
+            DB::transaction(function () use ($request, $data) {
+                $account = BankAccount::lockForUpdate()->findOrFail($data['bank_account_id']);
+                $account->increment('current_balance', $data['expected_amount']);
+                $account->refresh();
+
+                $cashflow = CashflowPlan::create($data + [
+                    'receipt_no'    => $this->nextDocumentNumber('RCPT'),
+                    'status'        => 'received',
+                    'received_date' => $data['expected_date'],
+                    'approved_by'   => $request->user()->id,
+                    'approved_at'   => now(),
+                    'created_by'    => $request->user()->id,
+                ]);
+
+                $this->recordBankTransaction(
+                    $account, $cashflow, 'credit',
+                    (float) $cashflow->expected_amount,
+                    $data['expected_date'],
+                    $cashflow->payer_name ?: $cashflow->ledger?->name,
+                    $data['reference_no'] ?? null,
+                    'Cash Inflow', $cashflow->title,
+                    $request->user()->id
+                );
+
+                ActivityLog::log('received', "Direct payment in posted: {$cashflow->title}", $cashflow);
+            });
+
+            return back()->with('success', 'Payment in posted directly and selected bank balance updated.');
+        }
 
         $cashflow = CashflowPlan::create($data + [
             'receipt_no' => $this->nextDocumentNumber('RCPT'),
@@ -737,7 +772,8 @@ class FinanceController extends Controller
 
     public function storeExpense(Request $request)
     {
-        $isDirectUser = $this->isDirectFinanceUser($request->user());
+        $isDirectPost = $request->boolean('direct_post');
+        $isDirectUser = $isDirectPost || $this->isDirectFinanceUser($request->user());
 
         $data = $request->validate([
             'ledger_id'       => ['required', 'exists:ledgers,id'],
@@ -750,7 +786,7 @@ class FinanceController extends Controller
             'due_date'        => ['nullable', 'date'],
             'expense_month'   => ['nullable', 'date'],
             'priority'        => ['required', Rule::in(['low','normal','high','urgent'])],
-            'status'          => ['required', Rule::in(['draft','submitted'])],
+            'status'          => [$isDirectPost ? 'nullable' : 'required', Rule::in(['draft','submitted'])],
             'attachment'      => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf,webp', 'max:4096'],
             'notes'           => ['nullable', 'string', 'max:1500'],
         ]);
@@ -762,6 +798,8 @@ class FinanceController extends Controller
         unset($data['attachment']);
 
         if ($isDirectUser) {
+            unset($data['status']);
+
             DB::transaction(function () use ($request, $data) {
                 $expense = ExpensePlan::create($data + [
                     'invoice_no'  => $this->nextDocumentNumber('INV'),
@@ -1363,4 +1401,3 @@ class FinanceController extends Controller
         });
     }
 }
-

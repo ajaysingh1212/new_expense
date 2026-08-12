@@ -855,13 +855,13 @@
                             @can('finance.cashflows.create')
                                 <a href="#" class="quick-action-btn qa-cashin" data-toggle="modal" data-target="#cashflowModal">
                                     <i class="fas fa-arrow-trend-up"></i>
-                                    <span class="quick-action-label">Plan Cash In<span class="quick-action-sub">Create incoming cashflow plan</span></span>
+                                    <span class="quick-action-label">Payment In<span class="quick-action-sub">Post direct incoming payment</span></span>
                                 </a>
                             @endcan
                             @can('finance.expenses.create')
                                 <a href="#" class="quick-action-btn qa-expense" data-toggle="modal" data-target="#expenseModal">
                                     <i class="fas fa-receipt"></i>
-                                    <span class="quick-action-label">Plan Expense<span class="quick-action-sub">Create expense or salary plan</span></span>
+                                    <span class="quick-action-label">Expense<span class="quick-action-sub">Post direct expense transaction</span></span>
                                 </a>
                             @endcan
                             @can('finance.approve')
@@ -870,9 +870,9 @@
                                     <span class="quick-action-label">Manual Entry<span class="quick-action-sub">Post correction or bank charge</span></span>
                                 </a>
                             @endcan
-                            <a href="{{ route('admin.dashboard', ['view' => 'report']) }}" class="quick-action-btn qa-report">
+                            <a href="{{ route('admin.finance.statement.index') }}" class="quick-action-btn qa-report">
                                 <i class="fas fa-file-chart-column"></i>
-                                <span class="quick-action-label">Open Report<span class="quick-action-sub">Detailed ledger-wise finance view</span></span>
+                                <span class="quick-action-label">Statement<span class="quick-action-sub">Open bank statement page</span></span>
                             </a>
                         </div>
                     </div>
@@ -910,6 +910,7 @@
     'expenseLedgers' => $expenseLedgers,
     'incomeLedgers' => $incomeLedgers,
     'bankAccounts' => $bankAccounts,
+    'directFinanceActions' => true,
 ])
 @endsection
 
