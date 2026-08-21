@@ -94,6 +94,7 @@
                         </div>
                     </div>
                 </div>
+                @if(auth()->user()->isSuperAdmin())
                 <div class="col-12"><hr><h5 class="mb-3"><i class="fas fa-user-lock mr-2 text-danger"></i>Login Security</h5></div>
                 <div class="col-md-6">
                     <div class="form-group">
@@ -120,6 +121,7 @@
                         <label class="custom-control-label" for="allow_desktop_login">Allow laptop/desktop login</label>
                     </div>
                 </div>
+                @endif
             </div>
         </div>
         <div class="card-footer d-flex justify-content-between">

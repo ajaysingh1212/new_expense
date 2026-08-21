@@ -429,13 +429,15 @@
                             <p>Activity Logs</p>
                         </a>
                     </li>
+                    @endcan
+                    @if(auth()->user()->isSuperAdmin())
                     <li class="nav-item">
                         <a href="{{ route('admin.blocked-ips.index') }}" class="nav-link {{ request()->routeIs('admin.blocked-ips.*') ? 'active' : '' }}">
                             <i class="nav-icon fas fa-ban"></i>
                             <p>Blocked IPs</p>
                         </a>
                     </li>
-                    @endcan
+                    @endif
 
                     @can('settings.index')
                     <li class="nav-header">System</li>

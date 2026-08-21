@@ -155,7 +155,7 @@
             </div>
         </div>
 
-        @can('users.edit')
+        @if(auth()->user()->isSuperAdmin())
         <div class="card mt-3">
             <div class="card-header"><h3><i class="fas fa-laptop-code mr-2 text-danger"></i>Login Devices & IP Control</h3></div>
             <div class="card-body">
@@ -225,7 +225,7 @@
                 </div>
             </div>
         </div>
-        @endcan
+        @endif
     </div>
 </div>
 

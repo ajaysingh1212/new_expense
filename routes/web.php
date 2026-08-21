@@ -62,13 +62,15 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'active.user', 'requ
         Route::put('/{user}',              [UserController::class, 'update'])->name('update')->middleware('can:users.edit');
         Route::delete('/{user}',           [UserController::class, 'destroy'])->name('destroy')->middleware('can:users.delete');
         Route::patch('/{user}/toggle-status', [UserController::class, 'toggleStatus'])->name('toggle-status')->middleware('can:users.edit');
-        Route::post('/{user}/block-ip', [BlockedIpController::class, 'blockUserIp'])->name('block-ip')->middleware('can:users.edit');
+        Route::post('/{user}/block-ip', [BlockedIpController::class, 'blockUserIp'])->name('block-ip')->middleware('super.admin');
     });
 
-    Route::get('/blocked-ips', [BlockedIpController::class, 'index'])->name('blocked-ips.index')->middleware('can:activity.index');
-    Route::post('/blocked-ips/block', [BlockedIpController::class, 'block'])->name('blocked-ips.block')->middleware('can:activity.index');
-    Route::patch('/blocked-ips/{blockedIp}/unblock', [BlockedIpController::class, 'unblock'])->name('blocked-ips.unblock')->middleware('can:activity.index');
-    Route::patch('/devices/{device}/{action}', [BlockedIpController::class, 'toggleDevice'])->name('devices.toggle')->middleware('can:users.edit');
+    Route::middleware('super.admin')->group(function () {
+        Route::get('/blocked-ips', [BlockedIpController::class, 'index'])->name('blocked-ips.index');
+        Route::post('/blocked-ips/block', [BlockedIpController::class, 'block'])->name('blocked-ips.block');
+        Route::patch('/blocked-ips/{blockedIp}/unblock', [BlockedIpController::class, 'unblock'])->name('blocked-ips.unblock');
+        Route::patch('/devices/{device}/{action}', [BlockedIpController::class, 'toggleDevice'])->name('devices.toggle');
+    });
 
     // Roles
     Route::prefix('roles')->name('roles.')->middleware('can:roles.index')->group(function () {

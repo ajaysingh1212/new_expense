@@ -16,6 +16,8 @@ class BlockedIpController extends Controller
 {
     public function index(Request $request)
     {
+        $this->authorizeSuperAdmin();
+
         $users = User::with('roles')->orderBy('name')->get();
         $selectedUser = null;
         $activeSessionsByIp = collect();
@@ -49,6 +51,8 @@ class BlockedIpController extends Controller
 
     public function block(Request $request, DeviceAccessService $deviceAccess)
     {
+        $this->authorizeSuperAdmin();
+
         $data = $request->validate([
             'user_id' => ['required', 'exists:users,id'],
             'ip_address' => [
@@ -103,6 +107,8 @@ class BlockedIpController extends Controller
 
     public function unblock(BlockedIp $blockedIp)
     {
+        $this->authorizeSuperAdmin();
+
         $blockedIp->update([
             'is_blocked' => false,
             'unblocked_at' => now(),
@@ -125,6 +131,8 @@ class BlockedIpController extends Controller
 
     public function blockUserIp(Request $request, User $user, DeviceAccessService $deviceAccess)
     {
+        $this->authorizeSuperAdmin();
+
         $data = $request->validate([
             'ip_address' => ['required', 'ip'],
             'reason' => ['nullable', 'string', 'max:1000'],
@@ -149,6 +157,8 @@ class BlockedIpController extends Controller
 
     public function toggleDevice(UserDevice $device, string $action, DeviceAccessService $deviceAccess)
     {
+        $this->authorizeSuperAdmin();
+
         abort_unless(in_array($action, ['trust', 'untrust', 'block', 'unblock'], true), 404);
 
         $updates = match ($action) {
@@ -178,5 +188,10 @@ class BlockedIpController extends Controller
         }
 
         return back()->with('success', $message);
+    }
+
+    protected function authorizeSuperAdmin(): void
+    {
+        abort_unless(auth()->user()?->isSuperAdmin(), 403);
     }
 }

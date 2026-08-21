@@ -140,11 +140,14 @@ class UserController extends Controller
             'designation'=> $data['designation'] ?? null,
             'department' => $data['department'] ?? null,
             'is_active'  => $request->boolean('is_active', true),
-            'max_active_devices' => $data['max_active_devices'] ?? null,
-            'trusted_ip_only' => $request->boolean('trusted_ip_only'),
-            'allow_mobile_login' => $request->boolean('allow_mobile_login'),
-            'allow_desktop_login' => $request->boolean('allow_desktop_login'),
         ];
+
+        if (auth()->user()->isSuperAdmin()) {
+            $updateData['max_active_devices'] = $data['max_active_devices'] ?? null;
+            $updateData['trusted_ip_only'] = $request->boolean('trusted_ip_only');
+            $updateData['allow_mobile_login'] = $request->boolean('allow_mobile_login');
+            $updateData['allow_desktop_login'] = $request->boolean('allow_desktop_login');
+        }
 
         if (!empty($data['password'])) {
             $updateData['password'] = Hash::make($data['password']);
