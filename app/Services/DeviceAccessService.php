@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Models\BlockedIp;
 use App\Models\User;
 use App\Models\UserDevice;
 use Illuminate\Http\Request;
@@ -15,10 +14,6 @@ class DeviceAccessService
         $ip = $request->ip();
         $deviceType = $this->deviceType($request->userAgent());
         $device = UserDevice::where('user_id', $user->id)->where('ip_address', $ip)->first();
-
-        if (BlockedIp::where('ip_address', $ip)->where('is_blocked', true)->exists()) {
-            return $this->deny('This IP address has been blocked by the administrator.');
-        }
 
         if ($device?->is_blocked) {
             return $this->deny('This device is blocked for your account.');

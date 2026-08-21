@@ -42,11 +42,12 @@ class BlockedIpController extends Controller
             }
         }
 
-        $ips = BlockedIp::with('blockedBy')
+        $blockedDevices = UserDevice::with('user')
+            ->where('is_blocked', true)
             ->latest()
             ->paginate(20);
 
-        return view('admin.blocked-ips.index', compact('ips', 'users', 'selectedUser', 'activeSessionsByIp', 'sessionIpsWithoutDevices'));
+        return view('admin.blocked-ips.index', compact('blockedDevices', 'users', 'selectedUser', 'activeSessionsByIp', 'sessionIpsWithoutDevices'));
     }
 
     public function block(Request $request, DeviceAccessService $deviceAccess)
@@ -68,22 +69,16 @@ class BlockedIpController extends Controller
 
         $user = User::findOrFail($data['user_id']);
 
-        $ip = BlockedIp::updateOrCreate(
-            [
-                'ip_address' => $data['ip_address'],
-            ],
-            [
-                'is_blocked' => true,
-                'blocked_by' => Auth::id(),
-                'blocked_at' => now(),
-                'unblocked_at' => null,
-                'reason' => $data['reason'] ?? null,
-            ]
-        );
-
         UserDevice::updateOrCreate(
             ['user_id' => $user->id, 'ip_address' => $data['ip_address']],
-            ['device_type' => 'desktop', 'is_blocked' => true, 'is_trusted' => false]
+            [
+                'device_type' => $deviceAccess->deviceType($request->userAgent()),
+                'device_name' => 'Manually added IP',
+                'user_agent' => null,
+                'is_blocked' => true,
+                'is_trusted' => false,
+                'last_login_at' => now(),
+            ]
         );
 
         $loggedOutSessions = $deviceAccess->logoutSessionsForIp($user, $data['ip_address']);

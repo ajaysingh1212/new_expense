@@ -145,37 +145,33 @@
         @endif
 
         <div class="card">
-            <div class="card-header"><h3><i class="fas fa-list mr-2 text-primary"></i>IP Audit</h3></div>
+            <div class="card-header"><h3><i class="fas fa-list mr-2 text-primary"></i>User-wise Blocked IPs</h3></div>
             <div class="card-body p-0">
                 <table class="table mb-0">
                     <thead>
-                        <tr><th>IP</th><th>Status</th><th>By</th><th>Reason</th><th>Action</th></tr>
+                        <tr><th>User</th><th>IP</th><th>Device</th><th>Status</th><th>Action</th></tr>
                     </thead>
                     <tbody>
-                    @forelse($ips as $ip)
+                    @forelse($blockedDevices as $device)
                         <tr>
-                            <td>{{ $ip->ip_address }}</td>
-                            <td><span class="badge badge-{{ $ip->is_blocked ? 'danger' : 'success' }}">{{ $ip->is_blocked ? 'Blocked' : 'Allowed' }}</span></td>
-                            <td>{{ $ip->blockedBy?->name ?? '-' }}</td>
-                            <td>{{ \Illuminate\Support\Str::limit($ip->reason, 40) }}</td>
+                            <td>{{ $device->user?->name ?? '-' }}<br><small class="text-muted">{{ $device->user?->email }}</small></td>
+                            <td>{{ $device->ip_address }}</td>
+                            <td>{{ ucfirst($device->device_type) }}<br><small class="text-muted">{{ $device->device_name }}</small></td>
+                            <td><span class="badge badge-danger">Blocked for this user only</span></td>
                             <td>
-                                @if($ip->is_blocked)
-                                <form method="POST" action="{{ route('admin.blocked-ips.unblock', $ip) }}">
+                                <form method="POST" action="{{ route('admin.devices.toggle', [$device, 'unblock']) }}">
                                     @csrf @method('PATCH')
                                     <button class="btn btn-sm btn-success"><i class="fas fa-unlock mr-1"></i> Unblock</button>
                                 </form>
-                                @else
-                                    <span class="text-muted">No action</span>
-                                @endif
                             </td>
                         </tr>
                     @empty
-                        <tr><td colspan="5" class="text-center text-muted py-4">No IP records found.</td></tr>
+                        <tr><td colspan="5" class="text-center text-muted py-4">No user-specific blocked IP found.</td></tr>
                     @endforelse
                     </tbody>
                 </table>
             </div>
-            <div class="card-footer">{{ $ips->links() }}</div>
+            <div class="card-footer">{{ $blockedDevices->links() }}</div>
         </div>
     </div>
 </div>
