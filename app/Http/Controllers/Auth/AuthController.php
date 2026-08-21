@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Models\User;
+use App\Services\DeviceAccessService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
@@ -24,7 +25,7 @@ class AuthController extends Controller
         return view('auth.login');
     }
 
-    public function login(Request $request)
+    public function login(Request $request, DeviceAccessService $deviceAccess)
     {
         $credentials = $request->validate([
             'email'    => 'required|email',
@@ -50,8 +51,26 @@ class AuthController extends Controller
         //  (90 days by default, configurable in config/session.php).
         //  The PIN screen acts as the second-factor on browser reopen.
         // ──────────────────────────────────────────────────────────────
+        if (Auth::validate($credentials)) {
+            $access = $deviceAccess->inspect($user, $request);
+
+            if (!$access['allowed']) {
+                ActivityLog::log('login_blocked', "Login blocked for {$user->email}", $user, [
+                    'ip_address' => $request->ip(),
+                    'device_type' => $access['device_type'],
+                    'reason' => $access['message'],
+                ]);
+
+                return back()
+                    ->with('security_error', $this->securityMessage($access['message']))
+                    ->withInput();
+            }
+        }
+
         if (Auth::attempt($credentials, remember: true)) {
             $request->session()->regenerate();
+
+            $deviceAccess->remember($user, $request);
 
             $user->update([
                 'last_login_at' => now(),
@@ -70,6 +89,11 @@ class AuthController extends Controller
         return back()
             ->withErrors(['password' => 'Incorrect password.'])
             ->withInput();
+    }
+
+    protected function securityMessage(string $reason): string
+    {
+        return "Your login could not be completed because this device or network is not approved for your account. {$reason} Please contact the developer or system administrator for help.";
     }
 
     // ════════════════════════════════════════════════════════════════════

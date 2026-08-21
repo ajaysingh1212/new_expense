@@ -21,6 +21,7 @@ class User extends Authenticatable
         'date_of_birth', 'gender', 'address', 'city', 'state', 'country', 'postal_code',
         'facebook', 'twitter', 'linkedin', 'instagram', 'github', 'website',
         'created_by', 'is_active', 'last_login_at', 'last_login_ip','pin','pin_enabled',
+        'max_active_devices', 'trusted_ip_only', 'allow_mobile_login', 'allow_desktop_login',
     ];
 
     protected $hidden = ['password', 'remember_token'];
@@ -33,6 +34,9 @@ class User extends Authenticatable
             'date_of_birth' => 'date',
             'password' => 'hashed',
             'is_active' => 'boolean',
+            'trusted_ip_only' => 'boolean',
+            'allow_mobile_login' => 'boolean',
+            'allow_desktop_login' => 'boolean',
         ];
     }
 
@@ -153,5 +157,14 @@ class User extends Authenticatable
     public function scopeCreatedBy($query, $userId)
     {
         return $query->where('created_by', $userId);
+    }
+    public function blockedIps()
+    {
+        return $this->hasMany(BlockedIp::class, 'blocked_by');
+    }
+
+    public function devices(): HasMany
+    {
+        return $this->hasMany(UserDevice::class);
     }
 }

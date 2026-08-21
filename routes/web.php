@@ -10,10 +10,10 @@ use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\SiteSettingController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\NotificationController;
+use App\Http\Controllers\Admin\BlockedIpController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Auth\PinController;
 use Illuminate\Support\Facades\Route;
-
 // ── Auth ──────────────────────────────────────────────────────────────────────
 Route::middleware('guest')->group(function () {
     Route::get('/login',    [AuthController::class, 'showLogin'])->name('login');
@@ -37,7 +37,7 @@ Route::middleware(['auth', 'active.user'])->group(function () {
 });
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
-Route::prefix('admin')->name('admin.')->middleware(['auth', 'active.user','require.pin'])->group(function () {
+Route::prefix('admin')->name('admin.')->middleware(['auth', 'active.user', 'require.pin', 'check.blocked.ip'])->group(function () {
 
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
@@ -62,7 +62,13 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'active.user','requi
         Route::put('/{user}',              [UserController::class, 'update'])->name('update')->middleware('can:users.edit');
         Route::delete('/{user}',           [UserController::class, 'destroy'])->name('destroy')->middleware('can:users.delete');
         Route::patch('/{user}/toggle-status', [UserController::class, 'toggleStatus'])->name('toggle-status')->middleware('can:users.edit');
+        Route::post('/{user}/block-ip', [BlockedIpController::class, 'blockUserIp'])->name('block-ip')->middleware('can:users.edit');
     });
+
+    Route::get('/blocked-ips', [BlockedIpController::class, 'index'])->name('blocked-ips.index')->middleware('can:activity.index');
+    Route::post('/blocked-ips/block', [BlockedIpController::class, 'block'])->name('blocked-ips.block')->middleware('can:activity.index');
+    Route::patch('/blocked-ips/{blockedIp}/unblock', [BlockedIpController::class, 'unblock'])->name('blocked-ips.unblock')->middleware('can:activity.index');
+    Route::patch('/devices/{device}/{action}', [BlockedIpController::class, 'toggleDevice'])->name('devices.toggle')->middleware('can:users.edit');
 
     // Roles
     Route::prefix('roles')->name('roles.')->middleware('can:roles.index')->group(function () {
@@ -125,7 +131,7 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'active.user','requi
 
         // Statement
         Route::get('/statement',  [FinanceController::class, 'statement'])->name('statement.index')->middleware('can:finance.bank.index');
-        
+
         // ── NEW: Transaction edit / delete (Admin only, guarded inside controller too) ──
         Route::put('/transactions/{transaction}',    [FinanceController::class, 'updateTransaction'])->name('transactions.update')->middleware('can:finance.approve');
         Route::delete('/transactions/{transaction}', [FinanceController::class, 'destroyTransaction'])->name('transactions.destroy')->middleware('can:finance.approve');

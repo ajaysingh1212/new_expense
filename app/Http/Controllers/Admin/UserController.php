@@ -51,6 +51,10 @@ class UserController extends Controller
             'designation'=> 'nullable|string|max:100',
             'department' => 'nullable|string|max:100',
             'is_active'  => 'boolean',
+            'max_active_devices' => 'nullable|integer|min:1|max:20',
+            'trusted_ip_only' => 'boolean',
+            'allow_mobile_login' => 'boolean',
+            'allow_desktop_login' => 'boolean',
             'roles'      => 'required|array',
             'roles.*'    => 'exists:roles,id',
         ]);
@@ -64,6 +68,10 @@ class UserController extends Controller
             'designation'=> $data['designation'] ?? null,
             'department' => $data['department'] ?? null,
             'is_active'  => $request->boolean('is_active', true),
+            'max_active_devices' => $data['max_active_devices'] ?? null,
+            'trusted_ip_only' => $request->boolean('trusted_ip_only'),
+            'allow_mobile_login' => $request->boolean('allow_mobile_login', true),
+            'allow_desktop_login' => $request->boolean('allow_desktop_login', true),
             'created_by' => auth()->id(),
         ]);
 
@@ -80,7 +88,13 @@ class UserController extends Controller
     {
         $this->authorizeUserAccess($user);
 
-        $user->load('roles', 'creator', 'createdUsers', 'activityLogs');
+        $user->load([
+            'roles',
+            'creator',
+            'createdUsers',
+            'activityLogs',
+            'devices' => fn ($query) => $query->latest('last_login_at'),
+        ]);
 
         return view('admin.users.show', compact('user'));
     }
@@ -110,6 +124,10 @@ class UserController extends Controller
             'designation'=> 'nullable|string|max:100',
             'department' => 'nullable|string|max:100',
             'is_active'  => 'boolean',
+            'max_active_devices' => 'nullable|integer|min:1|max:20',
+            'trusted_ip_only' => 'boolean',
+            'allow_mobile_login' => 'boolean',
+            'allow_desktop_login' => 'boolean',
             'roles'      => 'required|array',
             'roles.*'    => 'exists:roles,id',
         ]);
@@ -122,6 +140,10 @@ class UserController extends Controller
             'designation'=> $data['designation'] ?? null,
             'department' => $data['department'] ?? null,
             'is_active'  => $request->boolean('is_active', true),
+            'max_active_devices' => $data['max_active_devices'] ?? null,
+            'trusted_ip_only' => $request->boolean('trusted_ip_only'),
+            'allow_mobile_login' => $request->boolean('allow_mobile_login'),
+            'allow_desktop_login' => $request->boolean('allow_desktop_login'),
         ];
 
         if (!empty($data['password'])) {

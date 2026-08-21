@@ -94,6 +94,32 @@
                         </div>
                     </div>
                 </div>
+                <div class="col-12"><hr><h5 class="mb-3"><i class="fas fa-user-lock mr-2 text-danger"></i>Login Security</h5></div>
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label>Maximum Active Devices</label>
+                        <input type="number" min="1" max="20" name="max_active_devices" class="form-control" value="{{ old('max_active_devices', $user->max_active_devices) }}" placeholder="Blank means no limit">
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <label>Trusted Device Mode</label>
+                    <div class="custom-control custom-switch mt-2">
+                        <input type="checkbox" class="custom-control-input" id="trusted_ip_only" name="trusted_ip_only" value="1" {{ old('trusted_ip_only', $user->trusted_ip_only) ? 'checked' : '' }}>
+                        <label class="custom-control-label" for="trusted_ip_only">Allow login only from trusted IP/device</label>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="custom-control custom-switch mt-2">
+                        <input type="checkbox" class="custom-control-input" id="allow_mobile_login" name="allow_mobile_login" value="1" {{ old('allow_mobile_login', $user->allow_mobile_login ?? true) ? 'checked' : '' }}>
+                        <label class="custom-control-label" for="allow_mobile_login">Allow phone/mobile login</label>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="custom-control custom-switch mt-2">
+                        <input type="checkbox" class="custom-control-input" id="allow_desktop_login" name="allow_desktop_login" value="1" {{ old('allow_desktop_login', $user->allow_desktop_login ?? true) ? 'checked' : '' }}>
+                        <label class="custom-control-label" for="allow_desktop_login">Allow laptop/desktop login</label>
+                    </div>
+                </div>
             </div>
         </div>
         <div class="card-footer d-flex justify-content-between">

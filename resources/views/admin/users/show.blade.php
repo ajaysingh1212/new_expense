@@ -154,6 +154,78 @@
                 @endforelse
             </div>
         </div>
+
+        @can('users.edit')
+        <div class="card mt-3">
+            <div class="card-header"><h3><i class="fas fa-laptop-code mr-2 text-danger"></i>Login Devices & IP Control</h3></div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-3">
+                        <span class="text-muted d-block small">Max Devices</span>
+                        <strong>{{ $user->max_active_devices ?: 'No limit' }}</strong>
+                    </div>
+                    <div class="col-md-3">
+                        <span class="text-muted d-block small">Trusted Only</span>
+                        <span class="badge badge-{{ $user->trusted_ip_only ? 'warning' : 'secondary' }}">{{ $user->trusted_ip_only ? 'Enabled' : 'Disabled' }}</span>
+                    </div>
+                    <div class="col-md-3">
+                        <span class="text-muted d-block small">Phone Login</span>
+                        <span class="badge badge-{{ $user->allow_mobile_login ? 'success' : 'danger' }}">{{ $user->allow_mobile_login ? 'Allowed' : 'Blocked' }}</span>
+                    </div>
+                    <div class="col-md-3">
+                        <span class="text-muted d-block small">Laptop Login</span>
+                        <span class="badge badge-{{ $user->allow_desktop_login ? 'success' : 'danger' }}">{{ $user->allow_desktop_login ? 'Allowed' : 'Blocked' }}</span>
+                    </div>
+                </div>
+                <form method="POST" action="{{ route('admin.users.block-ip', $user) }}" class="mb-3">
+                    @csrf
+                    <div class="input-group">
+                        <input type="text" name="ip_address" class="form-control" value="{{ $user->last_login_ip }}" placeholder="IP address to block for this user">
+                        <input type="text" name="reason" class="form-control" placeholder="Reason">
+                        <div class="input-group-append">
+                            <button class="btn btn-danger"><i class="fas fa-ban mr-1"></i> Block User IP</button>
+                        </div>
+                    </div>
+                </form>
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <tr><th>IP</th><th>Device</th><th>Last Login</th><th>Status</th><th>Actions</th></tr>
+                        </thead>
+                        <tbody>
+                        @forelse($user->devices as $device)
+                            <tr>
+                                <td>{{ $device->ip_address }}</td>
+                                <td>{{ ucfirst($device->device_type) }}<br><small class="text-muted">{{ $device->device_name }}</small></td>
+                                <td>{{ $device->last_login_at?->diffForHumans() ?? '-' }}</td>
+                                <td>
+                                    <span class="badge badge-{{ $device->is_trusted ? 'success' : 'secondary' }}">{{ $device->is_trusted ? 'Trusted' : 'Untrusted' }}</span>
+                                    <span class="badge badge-{{ $device->is_blocked ? 'danger' : 'info' }}">{{ $device->is_blocked ? 'Blocked' : 'Allowed' }}</span>
+                                </td>
+                                <td class="d-flex flex-wrap" style="gap:6px;">
+                                    <form method="POST" action="{{ route('admin.devices.toggle', [$device, $device->is_trusted ? 'untrust' : 'trust']) }}">
+                                        @csrf @method('PATCH')
+                                        <button class="btn btn-sm btn-{{ $device->is_trusted ? 'secondary' : 'success' }}">
+                                            <i class="fas fa-{{ $device->is_trusted ? 'times' : 'check' }} mr-1"></i>{{ $device->is_trusted ? 'Untrust' : 'Trust' }}
+                                        </button>
+                                    </form>
+                                    <form method="POST" action="{{ route('admin.devices.toggle', [$device, $device->is_blocked ? 'unblock' : 'block']) }}">
+                                        @csrf @method('PATCH')
+                                        <button class="btn btn-sm btn-{{ $device->is_blocked ? 'success' : 'danger' }}">
+                                            <i class="fas fa-{{ $device->is_blocked ? 'unlock' : 'ban' }} mr-1"></i>{{ $device->is_blocked ? 'Unblock' : 'Block' }}
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                        @empty
+                            <tr><td colspan="5" class="text-center text-muted py-3">No device login has been captured yet.</td></tr>
+                        @endforelse
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        @endcan
     </div>
 </div>
 

@@ -173,6 +173,7 @@
         .register-link a { color: #4f46e5; text-decoration: none; font-weight: 600; }
 
         .error-msg { background: #fee2e2; color: #991b1b; border-radius: 8px; padding: 10px 14px; font-size: 0.85rem; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+        .security-msg { background: #fff7ed; color: #9a3412; border: 1px solid #fed7aa; border-radius: 10px; padding: 12px 14px; font-size: 0.85rem; line-height: 1.5; margin-bottom: 16px; display: flex; align-items: flex-start; gap: 10px; }
 
         /* Demo accounts pills */
         .demo-accounts { background: #f8fafc; border-radius: 10px; padding: 14px; margin-top: 20px; border: 1px dashed #e2e8f0; }
@@ -238,6 +239,12 @@
                     {{ $errors->first() }}
                 </div>
             @endif
+            @if(session('security_error'))
+                <div class="security-msg" id="security-message">
+                    <i class="fas fa-triangle-exclamation" style="margin-top:3px;"></i>
+                    <span>{{ session('security_error') }}</span>
+                </div>
+            @endif
 
             <form method="POST" action="{{ route('login.post') }}">
                 @csrf
@@ -245,7 +252,7 @@
                     <label>Email or Username</label>
                     <div class="input-group-custom">
                         <i class="fas fa-user input-icon"></i>
-                        <input type="text" name="email" value="{{ old('login') }}" class="form-input @error('login') is-invalid @enderror" placeholder="Enter email or username" required autofocus>
+                        <input type="email" name="email" value="{{ old('email') }}" class="form-input @error('email') is-invalid @enderror" placeholder="Enter email" required autofocus>
                     </div>
                 </div>
 
@@ -316,9 +323,12 @@
         }
     }
     function fillLogin(email) {
-        document.querySelector('[name=login]').value = email;
+        document.querySelector('[name=email]').value = email;
         document.querySelector('[name=password]').value = 'password';
     }
+    @if(session('security_error'))
+    alert(@json(session('security_error')));
+    @endif
     </script>
 </body>
 </html>

@@ -429,6 +429,12 @@
                             <p>Activity Logs</p>
                         </a>
                     </li>
+                    <li class="nav-item">
+                        <a href="{{ route('admin.blocked-ips.index') }}" class="nav-link {{ request()->routeIs('admin.blocked-ips.*') ? 'active' : '' }}">
+                            <i class="nav-icon fas fa-ban"></i>
+                            <p>Blocked IPs</p>
+                        </a>
+                    </li>
                     @endcan
 
                     @can('settings.index')
