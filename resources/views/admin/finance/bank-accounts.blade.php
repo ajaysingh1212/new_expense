@@ -77,6 +77,35 @@
             </form>
         </div>
     </div>
+    <style>
+/* Laravel Pagination Arrow Fix */
+.pagination svg,
+nav[role="navigation"] svg {
+    width: 16px !important;
+    height: 16px !important;
+    max-width: 16px !important;
+    max-height: 16px !important;
+    display: inline-block !important;
+    vertical-align: middle !important;
+}
+
+/* Pagination container */
+nav[role="navigation"] {
+    width: 100%;
+}
+
+/* Pagination buttons */
+nav[role="navigation"] a,
+nav[role="navigation"] span {
+    font-size: 14px;
+}
+
+/* Prevent SVG from stretching */
+nav[role="navigation"] svg {
+    flex-shrink: 0 !important;
+}
+</style>
     @endforeach
+
     @endsection
 
