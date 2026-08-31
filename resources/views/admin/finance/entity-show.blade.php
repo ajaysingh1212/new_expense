@@ -19,7 +19,14 @@
             <h3>{{ $heading }}</h3>
             <div class="text-muted small">{{ $subheading }}</div>
         </div>
-        <a href="{{ $backRoute }}" class="btn btn-light btn-sm"><i class="fas fa-arrow-left mr-1"></i> Back</a>
+        <div class="d-flex flex-wrap" style="gap:8px;">
+            @isset($pdfRoute)
+                <a href="{{ $pdfRoute }}" class="btn btn-danger btn-sm">
+                    <i class="fas fa-file-pdf mr-1"></i> Download PDF
+                </a>
+            @endisset
+            <a href="{{ $backRoute }}" class="btn btn-light btn-sm"><i class="fas fa-arrow-left mr-1"></i> Back</a>
+        </div>
     </div>
     <div class="card-body">
         <div class="row">
@@ -86,10 +93,25 @@
 @endif
 
 <div class="card">
-    <div class="card-header"><h3><i class="fas fa-file-lines mr-2 text-success"></i>Statement</h3></div>
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap" style="gap:10px;">
+        <h3 class="mb-0"><i class="fas fa-file-lines mr-2 text-success"></i>Statement</h3>
+        @isset($pdfRoute)
+            <form method="GET" class="form-inline" style="gap:8px;">
+                <div class="input-group input-group-sm">
+                    <input type="search" name="search" class="form-control" value="{{ request('search') }}" placeholder="Search transactions">
+                    <div class="input-group-append">
+                        <button class="btn btn-outline-primary" type="submit"><i class="fas fa-search"></i></button>
+                    </div>
+                </div>
+                @if(request('search'))
+                    <a href="{{ request()->url() }}" class="btn btn-sm btn-outline-secondary"><i class="fas fa-times"></i></a>
+                @endif
+            </form>
+        @endisset
+    </div>
     <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table mb-0">
+            <table class="table table-striped table-hover mb-0">
                 <thead>
                     <tr>
                         <th>Date</th>
@@ -113,9 +135,9 @@
                                 {{ $txn->description ?: '-' }}
                                 <div class="text-muted small">{{ $txn->category ?: '-' }} {{ $txn->reference_no ? '- '.$txn->reference_no : '' }}</div>
                             </td>
-                            <td class="text-danger">{{ $txn->direction === 'debit' ? $money($txn->amount) : '-' }}</td>
-                            <td class="text-success">{{ $txn->direction === 'credit' ? $money($txn->amount) : '-' }}</td>
-                            <td>{{ $money($txn->balance_after) }}</td>
+                            <td class="text-danger font-weight-bold">{{ $txn->direction === 'debit' ? $money($txn->amount) : '-' }}</td>
+                            <td class="text-success font-weight-bold">{{ $txn->direction === 'credit' ? $money($txn->amount) : '-' }}</td>
+                            <td class="font-weight-bold">{{ $money($txn->balance_after) }}</td>
                         </tr>
                     @empty
                         <tr><td colspan="8" class="text-center text-muted py-4">No posted statement transactions found.</td></tr>

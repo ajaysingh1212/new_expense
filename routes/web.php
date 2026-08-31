@@ -127,6 +127,7 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'active.user', 'requ
         // Bank Accounts
         Route::get('/bank-accounts',   [FinanceController::class, 'bankAccounts'])->name('bank-accounts.index')->middleware('can:finance.bank.index');
         Route::post('/bank-accounts',  [FinanceController::class, 'storeBankAccount'])->name('bank-accounts.store')->middleware('can:finance.bank.create');
+        Route::get('/bank-accounts/{bankAccount}/statement-pdf', [FinanceController::class, 'downloadBankAccountStatementPdf'])->name('bank-accounts.statement-pdf')->middleware('can:finance.bank.show');
         Route::get('/bank-accounts/{bankAccount}', [FinanceController::class, 'showBankAccount'])->name('bank-accounts.show')->middleware('can:finance.bank.show');
         Route::put('/bank-accounts/{bankAccount}', [FinanceController::class, 'updateBankAccount'])->name('bank-accounts.update')->middleware('can:finance.bank.edit');
         Route::delete('/bank-accounts/{bankAccount}', [FinanceController::class, 'destroyBankAccount'])->name('bank-accounts.destroy')->middleware('can:finance.bank.delete');

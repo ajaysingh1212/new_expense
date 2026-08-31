@@ -17,6 +17,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Rule;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Spatie\Permission\Models\Role as PermissionRole;
 
 class FinanceController extends Controller
@@ -150,25 +151,41 @@ class FinanceController extends Controller
         return view('admin.finance.bank-accounts', compact('bankAccounts'));
     }
 
-    public function showBankAccount(BankAccount $bankAccount)
+    public function showBankAccount(Request $request, BankAccount $bankAccount)
     {
         $bankAccount->load(['creator', 'editor']);
         $transactions = $bankAccount->transactions()
             ->with(['creator'])
-            ->latest('transaction_date')
-            ->latest()
+            ->when($request->filled('search'), function ($query) use ($request) {
+                $search = $request->input('search');
+                $query->where(function ($q) use ($search) {
+                    $q->where('transaction_no', 'like', "%{$search}%")
+                        ->orWhere('party_name', 'like', "%{$search}%")
+                        ->orWhere('reference_no', 'like', "%{$search}%")
+                        ->orWhere('category', 'like', "%{$search}%")
+                        ->orWhere('description', 'like', "%{$search}%")
+                        ->orWhere('direction', 'like', "%{$search}%");
+                });
+            })
+            ->orderBy('transaction_date')
+            ->orderBy('id')
             ->paginate(30);
+
+        $allTransactions = $bankAccount->transactions();
+        $totalCredit = (clone $allTransactions)->where('direction', 'credit')->sum('amount');
+        $totalDebit = (clone $allTransactions)->where('direction', 'debit')->sum('amount');
 
         return view('admin.finance.entity-show', [
             'title' => 'Bank Statement',
             'heading' => $bankAccount->name,
             'subheading' => ($bankAccount->bank_name ?: ucfirst($bankAccount->type)) . ' - ' . ($bankAccount->account_number ?: 'No account number'),
             'backRoute' => route('admin.finance.bank-accounts.index'),
+            'pdfRoute' => route('admin.finance.bank-accounts.statement-pdf', $bankAccount),
             'summary' => [
                 'Current Balance' => $bankAccount->current_balance,
                 'Opening Balance' => $bankAccount->opening_balance,
-                'Total Credit' => $transactions->getCollection()->where('direction', 'credit')->sum('amount'),
-                'Total Debit' => $transactions->getCollection()->where('direction', 'debit')->sum('amount'),
+                'Total Credit' => $totalCredit,
+                'Total Debit' => $totalDebit,
             ],
             'details' => [
                 'Type' => ucfirst($bankAccount->type),
@@ -179,6 +196,29 @@ class FinanceController extends Controller
             'transactions' => $transactions,
             'plans' => collect(),
         ]);
+    }
+
+    public function downloadBankAccountStatementPdf(BankAccount $bankAccount)
+    {
+        $bankAccount->load(['creator', 'editor']);
+        $transactions = $bankAccount->transactions()
+            ->with(['creator'])
+            ->orderBy('transaction_date')
+            ->orderBy('id')
+            ->get();
+
+        $summary = [
+            'total_credit' => $transactions->where('direction', 'credit')->sum('amount'),
+            'total_debit' => $transactions->where('direction', 'debit')->sum('amount'),
+            'net_movement' => $transactions->where('direction', 'credit')->sum('amount') - $transactions->where('direction', 'debit')->sum('amount'),
+        ];
+
+        $pdf = Pdf::loadView('admin.finance.pdf.bank-statement', compact('bankAccount', 'transactions', 'summary'))
+            ->setPaper('a4', 'landscape');
+
+        $filename = 'bank-statement-' . $bankAccount->id . '-' . now()->format('Ymd-His') . '.pdf';
+
+        return $pdf->download($filename);
     }
 
     public function storeBankAccount(Request $request)
@@ -277,8 +317,8 @@ class FinanceController extends Controller
             ->when($from,      fn($q) => $q->whereDate('transaction_date', '>=', $from))
             ->when($to,        fn($q) => $q->whereDate('transaction_date', '<=', $to))
             ->when($direction, fn($q) => $q->where('direction', $direction))
-            ->latest('transaction_date')
-            ->latest()
+            ->orderBy('transaction_date')
+            ->orderBy('id')
             ->paginate(30)
             ->withQueryString();
 
@@ -1189,7 +1229,7 @@ class FinanceController extends Controller
         ?string     $description,
         ?int        $userId
     ): BankTransaction {
-        return BankTransaction::create([
+        $transaction = BankTransaction::create([
             'bank_account_id'       => $account->id,
             'transactionable_type'  => $source ? get_class($source) : null,
             'transactionable_id'    => $source?->id,
@@ -1205,6 +1245,10 @@ class FinanceController extends Controller
             'reconciliation_status' => 'unreconciled',
             'created_by'            => $userId,
         ]);
+
+        $this->recalculateBalanceChain($account);
+
+        return $transaction->refresh();
     }
 
     //  TRANSACTION EDIT / DELETE (Admin only — cascades to source + balance)
