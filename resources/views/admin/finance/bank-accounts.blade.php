@@ -11,116 +11,33 @@
 
 @php
     $money = fn($amount) => 'Rs ' . number_format((float) $amount, 2);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Pagination Variables
+    |--------------------------------------------------------------------------
+    */
+    $currentPage = $bankAccounts->currentPage();
+    $lastPage = $bankAccounts->lastPage();
+    $totalResults = $bankAccounts->total();
+    $perPage = $bankAccounts->perPage();
+
+    $from = $totalResults > 0
+        ? (($currentPage - 1) * $perPage) + 1
+        : 0;
+
+    $to = min($currentPage * $perPage, $totalResults);
 @endphp
+
 
 {{-- =========================================================
      PAGE CSS
 ========================================================= --}}
 <style>
-    /* ==============================
-       Pagination / DataTable Arrow Fix
-    ============================== */
 
-    .bank-pagination {
-        width: 100%;
-        margin-top: 20px;
-        overflow: hidden;
-    }
-
-    .bank-pagination nav {
-        width: 100%;
-    }
-
-    .bank-pagination .pagination {
-        display: flex !important;
-        flex-wrap: wrap;
-        align-items: center !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        list-style: none !important;
-    }
-
-    .bank-pagination .page-item {
-        margin: 0 !important;
-    }
-
-    .bank-pagination .page-link {
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-
-        min-width: 38px !important;
-        width: auto !important;
-        height: 38px !important;
-
-        padding: 6px 12px !important;
-        margin: 0 !important;
-
-        font-size: 14px !important;
-        line-height: 1 !important;
-
-        box-sizing: border-box !important;
-    }
-
-    /*
-     * IMPORTANT:
-     * Laravel pagination SVG arrows ko global CSS
-     * bahut bada kar raha tha.
-     */
-    .bank-pagination svg {
-        width: 16px !important;
-        height: 16px !important;
-
-        min-width: 16px !important;
-        min-height: 16px !important;
-
-        max-width: 16px !important;
-        max-height: 16px !important;
-
-        display: inline-block !important;
-        vertical-align: middle !important;
-
-        position: static !important;
-        transform: none !important;
-    }
-
-    .bank-pagination a svg,
-    .bank-pagination span svg,
-    .bank-pagination button svg {
-        width: 16px !important;
-        height: 16px !important;
-
-        min-width: 16px !important;
-        min-height: 16px !important;
-
-        max-width: 16px !important;
-        max-height: 16px !important;
-    }
-
-    /* Laravel Tailwind pagination compatibility */
-    .bank-pagination nav[role="navigation"] {
-        display: block !important;
-    }
-
-    .bank-pagination nav[role="navigation"] svg {
-        width: 16px !important;
-        height: 16px !important;
-
-        min-width: 16px !important;
-        min-height: 16px !important;
-
-        max-width: 16px !important;
-        max-height: 16px !important;
-    }
-
-    /* Remove unwanted huge line-height */
-    .bank-pagination svg {
-        line-height: 1 !important;
-    }
-
-    /* ==============================
-       Bank Account Cards
-    ============================== */
+    /* =========================================================
+       BANK ACCOUNT CARD
+    ========================================================= */
 
     .bank-account-card {
         border-left: 4px solid #0f766e !important;
@@ -153,15 +70,138 @@
         line-height: 1.2;
     }
 
-    /* ==============================
-       Modal
-    ============================== */
+
+    /* =========================================================
+       CUSTOM PAGINATION
+       IMPORTANT: NO SVG USED
+    ========================================================= */
+
+    .bank-pagination-wrapper {
+        width: 100%;
+        margin-top: 25px;
+        padding-top: 18px;
+        border-top: 1px solid #e9ecef;
+    }
+
+    .bank-pagination-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-bottom: 15px;
+    }
+
+    .bank-pagination-info {
+        color: #6c757d;
+        font-size: 14px;
+    }
+
+    .bank-pagination {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        flex-wrap: wrap;
+        gap: 5px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+
+    .bank-pagination-item {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+
+    .bank-pagination-link {
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+
+        min-width: 38px !important;
+        height: 38px !important;
+
+        padding: 6px 12px !important;
+
+        border: 1px solid #dee2e6 !important;
+        border-radius: 4px !important;
+
+        background: #fff !important;
+        color: #343a40 !important;
+
+        font-size: 14px !important;
+        font-weight: 400 !important;
+        line-height: 1 !important;
+
+        text-decoration: none !important;
+
+        box-sizing: border-box !important;
+
+        transition:
+            background-color 0.15s ease,
+            border-color 0.15s ease,
+            color 0.15s ease;
+    }
+
+    .bank-pagination-link:hover {
+        background: #f8f9fa !important;
+        border-color: #adb5bd !important;
+        color: #212529 !important;
+        text-decoration: none !important;
+    }
+
+    .bank-pagination-link.active {
+        background: #007bff !important;
+        border-color: #007bff !important;
+        color: #fff !important;
+        cursor: default;
+    }
+
+    .bank-pagination-link.disabled {
+        background: #f8f9fa !important;
+        border-color: #dee2e6 !important;
+        color: #adb5bd !important;
+        cursor: not-allowed !important;
+        pointer-events: none !important;
+    }
+
+    /* Previous / Next buttons */
+    .bank-pagination-prev,
+    .bank-pagination-next {
+        min-width: 85px !important;
+        padding-left: 14px !important;
+        padding-right: 14px !important;
+    }
+
+    /*
+     * VERY IMPORTANT:
+     * Pagination ke andar koi SVG / pseudo arrow nahi chahiye.
+     */
+    .bank-pagination svg,
+    .bank-pagination-wrapper svg {
+        display: none !important;
+        width: 0 !important;
+        height: 0 !important;
+    }
+
+    .bank-pagination-link::before,
+    .bank-pagination-link::after {
+        content: none !important;
+        display: none !important;
+    }
+
+
+    /* =========================================================
+       MODALS
+    ========================================================= */
 
     .fin-modal .modal-header {
         align-items: center;
     }
 
-    .fin-modal .modal-header h5 {
+    .fin-modal .modal-header h5,
+    .fin-modal .modal-title {
         margin-bottom: 0;
     }
 
@@ -169,42 +209,42 @@
         font-weight: 500;
     }
 
-    /* Prevent global SVG CSS from affecting modal icons */
-    .fin-modal svg {
-        max-width: 16px;
-        max-height: 16px;
-    }
 
-    /* ==============================
-       Mobile Pagination
-    ============================== */
+    /* =========================================================
+       MOBILE
+    ========================================================= */
 
-    @media (max-width: 576px) {
+    @media (max-width: 767px) {
 
-        .bank-pagination .page-link {
+        .bank-pagination-top {
+            display: block;
+        }
+
+        .bank-pagination-info {
+            margin-bottom: 12px;
+        }
+
+        .bank-pagination {
+            justify-content: flex-start;
+        }
+
+        .bank-pagination-link {
             min-width: 34px !important;
             height: 34px !important;
             padding: 5px 9px !important;
             font-size: 13px !important;
         }
 
-        .bank-pagination svg,
-        .bank-pagination a svg,
-        .bank-pagination span svg {
-            width: 14px !important;
-            height: 14px !important;
-
-            min-width: 14px !important;
-            min-height: 14px !important;
-
-            max-width: 14px !important;
-            max-height: 14px !important;
+        .bank-pagination-prev,
+        .bank-pagination-next {
+            min-width: 75px !important;
         }
 
         .bank-account-balance {
             font-size: 21px;
         }
     }
+
 </style>
 
 
@@ -213,7 +253,9 @@
 ========================================================= --}}
 <div class="card">
 
-    {{-- CARD HEADER --}}
+    {{-- =====================================================
+         CARD HEADER
+    ====================================================== --}}
     <div class="card-header d-flex justify-content-between align-items-center">
 
         <h3 class="mb-0">
@@ -222,6 +264,7 @@
         </h3>
 
         @can('finance.bank.create')
+
             <button
                 type="button"
                 class="btn btn-primary btn-sm"
@@ -231,12 +274,15 @@
                 <i class="fas fa-plus mr-1"></i>
                 New Account
             </button>
+
         @endcan
 
     </div>
 
 
-    {{-- CARD BODY --}}
+    {{-- =====================================================
+         CARD BODY
+    ====================================================== --}}
     <div class="card-body">
 
         <div class="row">
@@ -245,9 +291,7 @@
 
                 <div class="col-md-6 col-xl-4 mb-3">
 
-                    <div
-                        class="card h-100 bank-account-card"
-                    >
+                    <div class="card h-100 bank-account-card">
 
                         <div class="card-body">
 
@@ -366,13 +410,183 @@
 
 
         {{-- =================================================
-             PAGINATION
+             CUSTOM PAGINATION
+             NO LARAVEL LINKS()
+             NO SVG ARROWS
         ================================================== --}}
-        @if($bankAccounts->hasPages())
+        @if($totalResults > 0)
 
-            <div class="bank-pagination">
+            <div class="bank-pagination-wrapper">
 
-                {{ $bankAccounts->onEachSide(1)->links('pagination::bootstrap-4') }}
+                {{-- PAGINATION INFO --}}
+                <div class="bank-pagination-top">
+
+                    <div class="bank-pagination-info">
+
+                        Showing
+                        <strong>{{ $from }}</strong>
+                        to
+                        <strong>{{ $to }}</strong>
+                        of
+                        <strong>{{ $totalResults }}</strong>
+                        results
+
+                    </div>
+
+
+                    {{-- PAGINATION BUTTONS --}}
+                    @if($lastPage > 1)
+
+                        <ul class="bank-pagination">
+
+                            {{-- PREVIOUS --}}
+                            <li class="bank-pagination-item">
+
+                                @if($currentPage > 1)
+
+                                    <a
+                                        href="{{ $bankAccounts->url($currentPage - 1) }}"
+                                        class="bank-pagination-link bank-pagination-prev"
+                                    >
+                                        Previous
+                                    </a>
+
+                                @else
+
+                                    <span
+                                        class="bank-pagination-link bank-pagination-prev disabled"
+                                    >
+                                        Previous
+                                    </span>
+
+                                @endif
+
+                            </li>
+
+
+                            {{-- PAGE NUMBERS --}}
+                            @php
+                                $startPage = max(1, $currentPage - 2);
+                                $endPage = min($lastPage, $currentPage + 2);
+                            @endphp
+
+
+                            {{-- FIRST PAGE --}}
+                            @if($startPage > 1)
+
+                                <li class="bank-pagination-item">
+
+                                    <a
+                                        href="{{ $bankAccounts->url(1) }}"
+                                        class="bank-pagination-link"
+                                    >
+                                        1
+                                    </a>
+
+                                </li>
+
+                                @if($startPage > 2)
+
+                                    <li class="bank-pagination-item">
+
+                                        <span class="bank-pagination-link disabled">
+                                            ...
+                                        </span>
+
+                                    </li>
+
+                                @endif
+
+                            @endif
+
+
+                            {{-- PAGE LOOP --}}
+                            @for($page = $startPage; $page <= $endPage; $page++)
+
+                                <li class="bank-pagination-item">
+
+                                    @if($page == $currentPage)
+
+                                        <span
+                                            class="bank-pagination-link active"
+                                        >
+                                            {{ $page }}
+                                        </span>
+
+                                    @else
+
+                                        <a
+                                            href="{{ $bankAccounts->url($page) }}"
+                                            class="bank-pagination-link"
+                                        >
+                                            {{ $page }}
+                                        </a>
+
+                                    @endif
+
+                                </li>
+
+                            @endfor
+
+
+                            {{-- LAST PAGE --}}
+                            @if($endPage < $lastPage)
+
+                                @if($endPage < $lastPage - 1)
+
+                                    <li class="bank-pagination-item">
+
+                                        <span class="bank-pagination-link disabled">
+                                            ...
+                                        </span>
+
+                                    </li>
+
+                                @endif
+
+                                <li class="bank-pagination-item">
+
+                                    <a
+                                        href="{{ $bankAccounts->url($lastPage) }}"
+                                        class="bank-pagination-link"
+                                    >
+                                        {{ $lastPage }}
+                                    </a>
+
+                                </li>
+
+                            @endif
+
+
+                            {{-- NEXT --}}
+                            <li class="bank-pagination-item">
+
+                                @if($currentPage < $lastPage)
+
+                                    <a
+                                        href="{{ $bankAccounts->url($currentPage + 1) }}"
+                                        class="bank-pagination-link bank-pagination-next"
+                                    >
+                                        Next
+                                    </a>
+
+                                @else
+
+                                    <span
+                                        class="bank-pagination-link bank-pagination-next disabled"
+                                    >
+                                        Next
+                                    </span>
+
+                                @endif
+
+                            </li>
+
+                        </ul>
+
+                    @endif
+
+                </div>
 
             </div>
 
@@ -381,30 +595,7 @@
     </div>
 
 </div>
-<style>
-    .bank-pagination .pagination {
-    margin-bottom: 0 !important;
-}
 
-.bank-pagination .page-link {
-    width: auto !important;
-    min-width: 38px !important;
-    height: 38px !important;
-    padding: 8px 12px !important;
-    font-size: 14px !important;
-    line-height: 20px !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-}
-
-.bank-pagination .page-link svg {
-    width: 16px !important;
-    height: 16px !important;
-    max-width: 16px !important;
-    max-height: 16px !important;
-}
-</style>
 
 {{-- =========================================================
      CREATE ACCOUNT MODAL
