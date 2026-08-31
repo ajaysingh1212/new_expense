@@ -372,7 +372,7 @@
 
             <div class="bank-pagination">
 
-                {{ $bankAccounts->links() }}
+                {{ $bankAccounts->onEachSide(1)->links('pagination::bootstrap-4') }}
 
             </div>
 
@@ -381,7 +381,30 @@
     </div>
 
 </div>
+<style>
+    .bank-pagination .pagination {
+    margin-bottom: 0 !important;
+}
 
+.bank-pagination .page-link {
+    width: auto !important;
+    min-width: 38px !important;
+    height: 38px !important;
+    padding: 8px 12px !important;
+    font-size: 14px !important;
+    line-height: 20px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+.bank-pagination .page-link svg {
+    width: 16px !important;
+    height: 16px !important;
+    max-width: 16px !important;
+    max-height: 16px !important;
+}
+</style>
 
 {{-- =========================================================
      CREATE ACCOUNT MODAL
