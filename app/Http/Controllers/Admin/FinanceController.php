@@ -167,6 +167,7 @@ class FinanceController extends Controller
                         ->orWhere('direction', 'like', "%{$search}%");
                 });
             })
+            ->orderByRaw("CASE WHEN category = 'Opening Balance' AND reference_no = 'OPENING' THEN 0 ELSE 1 END")
             ->orderBy('transaction_date')
             ->orderBy('id')
             ->paginate(30);
@@ -203,6 +204,7 @@ class FinanceController extends Controller
         $bankAccount->load(['creator', 'editor']);
         $transactions = $bankAccount->transactions()
             ->with(['creator'])
+            ->orderByRaw("CASE WHEN category = 'Opening Balance' AND reference_no = 'OPENING' THEN 0 ELSE 1 END")
             ->orderBy('transaction_date')
             ->orderBy('id')
             ->get();
@@ -262,13 +264,19 @@ class FinanceController extends Controller
             'type'            => ['required', Rule::in(['bank','cash','wallet'])],
             'opening_balance' => ['required', 'numeric', 'min:0'],
             'opening_balance_date' => ['nullable', 'date'],
-            'current_balance' => ['required', 'numeric', 'min:0'],
             'status'          => ['required', Rule::in(['active','inactive'])],
             'notes'           => ['nullable', 'string', 'max:1000'],
         ]);
 
-        $bankAccount->update($data + ['updated_by' => $request->user()->id]);
-        ActivityLog::log('updated', "Updated bank account: {$bankAccount->name}", $bankAccount);
+        DB::transaction(function () use ($request, $bankAccount, $data) {
+            $bankAccount = BankAccount::lockForUpdate()->findOrFail($bankAccount->id);
+            $bankAccount->update($data + ['updated_by' => $request->user()->id]);
+
+            $this->syncOpeningBalanceTransaction($bankAccount, $request->user()->id);
+            $this->recalculateBalanceChain($bankAccount);
+
+            ActivityLog::log('updated', "Updated bank account: {$bankAccount->name}", $bankAccount);
+        });
 
         return back()->with('success', "Bank account '{$bankAccount->name}' updated successfully.");
     }
@@ -317,6 +325,7 @@ class FinanceController extends Controller
             ->when($from,      fn($q) => $q->whereDate('transaction_date', '>=', $from))
             ->when($to,        fn($q) => $q->whereDate('transaction_date', '<=', $to))
             ->when($direction, fn($q) => $q->where('direction', $direction))
+            ->orderByRaw("CASE WHEN category = 'Opening Balance' AND reference_no = 'OPENING' THEN 0 ELSE 1 END")
             ->orderBy('transaction_date')
             ->orderBy('id')
             ->paginate(30)
@@ -1251,6 +1260,59 @@ class FinanceController extends Controller
         return $transaction->refresh();
     }
 
+    private function syncOpeningBalanceTransaction(BankAccount $account, ?int $userId): void
+    {
+        $openingTransaction = $this->openingBalanceTransaction($account);
+        $amount = (float) $account->opening_balance;
+
+        if ($amount <= 0) {
+            $openingTransaction?->delete();
+            return;
+        }
+
+        $date = $account->opening_balance_date?->toDateString() ?: now()->toDateString();
+
+        if ($openingTransaction) {
+            $openingTransaction->update([
+                'transaction_date' => $date,
+                'direction' => 'credit',
+                'amount' => $amount,
+                'party_name' => 'Opening Balance',
+                'reference_no' => 'OPENING',
+                'category' => 'Opening Balance',
+                'description' => 'Initial bank/cash balance',
+                'updated_by' => $userId,
+            ]);
+
+            return;
+        }
+
+        BankTransaction::create([
+            'bank_account_id' => $account->id,
+            'transaction_no' => $this->nextDocumentNumber('TXN'),
+            'transaction_date' => $date,
+            'direction' => 'credit',
+            'amount' => $amount,
+            'balance_after' => $amount,
+            'party_name' => 'Opening Balance',
+            'reference_no' => 'OPENING',
+            'category' => 'Opening Balance',
+            'description' => 'Initial bank/cash balance',
+            'reconciliation_status' => 'unreconciled',
+            'created_by' => $userId,
+        ]);
+    }
+
+    private function openingBalanceTransaction(BankAccount $account): ?BankTransaction
+    {
+        return BankTransaction::where('bank_account_id', $account->id)
+            ->where('category', 'Opening Balance')
+            ->where('reference_no', 'OPENING')
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->first();
+    }
+
     //  TRANSACTION EDIT / DELETE (Admin only — cascades to source + balance)
     // ════════════════════════════════════════════════════════════════════
 
@@ -1416,6 +1478,7 @@ class FinanceController extends Controller
         $balance = 0.0;
 
         BankTransaction::where('bank_account_id', $account->id)
+            ->orderByRaw("CASE WHEN category = 'Opening Balance' AND reference_no = 'OPENING' THEN 0 ELSE 1 END")
             ->orderBy('transaction_date')
             ->orderBy('id')
             ->get()

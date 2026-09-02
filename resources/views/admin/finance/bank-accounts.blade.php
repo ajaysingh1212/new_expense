@@ -770,7 +770,7 @@
 
 
                         {{-- OPENING BALANCE --}}
-                        <div class="col-md-4 form-group">
+                        <div class="col-md-6 form-group">
 
                             <label>
                                 Opening Balance *
@@ -789,28 +789,8 @@
                         </div>
 
 
-                        {{-- CURRENT BALANCE --}}
-                        <div class="col-md-4 form-group">
-
-                            <label>
-                                Current Balance *
-                            </label>
-
-                            <input
-                                type="number"
-                                name="current_balance"
-                                step="0.01"
-                                min="0"
-                                class="form-control"
-                                required
-                                value="{{ $account->current_balance }}"
-                            >
-
-                        </div>
-
-
                         {{-- OPENING DATE --}}
-                        <div class="col-md-4 form-group">
+                        <div class="col-md-6 form-group">
 
                             <label>
                                 Opening Date
