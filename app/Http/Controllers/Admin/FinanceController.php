@@ -176,6 +176,7 @@ class FinanceController extends Controller
             ->orderBy('transaction_date')
             ->orderBy('id')
             ->paginate(30);
+        $this->attachDisplayBalances($transactions);
 
         $allTransactions = $bankAccount->transactions();
         $totalCredit = (clone $allTransactions)->where('direction', 'credit')->sum('amount');
@@ -215,6 +216,7 @@ class FinanceController extends Controller
             ->orderBy('transaction_date')
             ->orderBy('id')
             ->get();
+        $this->attachDisplayBalances($transactions);
 
         $summary = [
             'total_credit' => $transactions->where('direction', 'credit')->sum('amount'),
@@ -340,6 +342,7 @@ class FinanceController extends Controller
             ->orderBy('id')
             ->paginate(30)
             ->withQueryString();
+        $this->attachDisplayBalances($transactions);
 
         $summary = [
             'credit' => $transactions->getCollection()->where('direction', 'credit')->sum('amount'),
@@ -1293,6 +1296,54 @@ class FinanceController extends Controller
         BankAccount::whereIn('id', $accountIds->filter()->unique()->values())
             ->get()
             ->each(fn(BankAccount $account) => $this->normalizeBankAccountStatement($account));
+    }
+
+    private function attachDisplayBalances($transactions): void
+    {
+        $collection = method_exists($transactions, 'getCollection') ? $transactions->getCollection() : $transactions;
+
+        $collection->each(function (BankTransaction $transaction) {
+            $transaction->setAttribute('display_balance_after', $this->runningBalanceAfter($transaction));
+        });
+    }
+
+    private function runningBalanceAfter(BankTransaction $transaction): float
+    {
+        $date = $transaction->transaction_date?->toDateString();
+        $isOpening = $this->isOpeningBalanceTransaction($transaction);
+
+        return (float) BankTransaction::where('bank_account_id', $transaction->bank_account_id)
+            ->where(function ($query) use ($transaction, $date, $isOpening) {
+                if ($isOpening) {
+                    $query->where('id', $transaction->id);
+                    return;
+                }
+
+                $query->where(function ($q) {
+                    $q->where('category', 'Opening Balance')
+                        ->where(function ($opening) {
+                            $opening->where('reference_no', 'OPENING')
+                                ->orWhere('party_name', 'Opening Balance');
+                        });
+                })->orWhere(function ($q) use ($transaction, $date) {
+                    $q->where(function ($beforeDate) use ($date) {
+                        $beforeDate->whereDate('transaction_date', '<', $date)
+                            ->where(function ($notOpening) {
+                                $notOpening->where('category', '!=', 'Opening Balance')
+                                    ->orWhereNull('category');
+                            });
+                    })->orWhere(function ($sameDate) use ($transaction, $date) {
+                        $sameDate->whereDate('transaction_date', $date)
+                            ->where('id', '<=', $transaction->id)
+                            ->where(function ($notOpening) {
+                                $notOpening->where('category', '!=', 'Opening Balance')
+                                    ->orWhereNull('category');
+                            });
+                    });
+                });
+            })
+            ->selectRaw("COALESCE(SUM(CASE WHEN direction = 'credit' THEN amount ELSE -amount END), 0) as running_balance")
+            ->value('running_balance');
     }
 
     private function syncOpeningBalanceTransaction(BankAccount $account, ?int $userId): void

@@ -600,7 +600,7 @@ body { background: var(--st-bg) !important; }
 
                 {{-- Balance After --}}
                 <td style="text-align:right;">
-                    <span class="amt-balance">{{ $money($txn->balance_after) }}</span>
+                    <span class="amt-balance">{{ $money($txn->display_balance_after ?? $txn->balance_after) }}</span>
                 </td>
 
                 {{-- Reconciliation --}}
@@ -646,7 +646,7 @@ body { background: var(--st-bg) !important; }
                                 data-account="{{ $txn->bankAccount?->name }}"
                                 data-direction="{{ strtoupper($txn->direction) }}"
                                 data-amount="{{ $money($txn->amount) }}"
-                                data-balance="{{ $money($txn->balance_after) }}"
+                                data-balance="{{ $money($txn->display_balance_after ?? $txn->balance_after) }}"
                                 data-party="{{ $txn->party_name ?: '-' }}"
                                 data-reference="{{ $txn->reference_no ?: '-' }}"
                                 data-category="{{ $txn->category ?: '-' }}"

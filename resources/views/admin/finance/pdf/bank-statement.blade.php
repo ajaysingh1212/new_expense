@@ -86,7 +86,7 @@
                 <td>{{ $txn->category ?: '-' }}</td>
                 <td class="right debit">{{ $txn->direction === 'debit' ? $money($txn->amount) : '-' }}</td>
                 <td class="right credit">{{ $txn->direction === 'credit' ? $money($txn->amount) : '-' }}</td>
-                <td class="right balance">{{ $money($txn->balance_after) }}</td>
+                <td class="right balance">{{ $money($txn->display_balance_after ?? $txn->balance_after) }}</td>
             </tr>
         @empty
             <tr><td colspan="9" style="text-align:center;">No transactions found.</td></tr>

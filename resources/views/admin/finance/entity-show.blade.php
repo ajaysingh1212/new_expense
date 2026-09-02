@@ -137,7 +137,7 @@
                             </td>
                             <td class="text-danger font-weight-bold">{{ $txn->direction === 'debit' ? $money($txn->amount) : '-' }}</td>
                             <td class="text-success font-weight-bold">{{ $txn->direction === 'credit' ? $money($txn->amount) : '-' }}</td>
-                            <td class="font-weight-bold">{{ $money($txn->balance_after) }}</td>
+                            <td class="font-weight-bold">{{ $money($txn->display_balance_after ?? $txn->balance_after) }}</td>
                         </tr>
                     @empty
                         <tr><td colspan="8" class="text-center text-muted py-4">No posted statement transactions found.</td></tr>
