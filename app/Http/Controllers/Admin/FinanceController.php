@@ -148,6 +148,9 @@ class FinanceController extends Controller
     public function bankAccounts()
     {
         $bankAccounts = BankAccount::latest()->paginate(20);
+        $bankAccounts->getCollection()->each(fn(BankAccount $account) => $this->normalizeBankAccountStatement($account));
+        $bankAccounts->setCollection($bankAccounts->getCollection()->fresh());
+
         return view('admin.finance.bank-accounts', compact('bankAccounts'));
     }
 
@@ -315,14 +318,8 @@ class FinanceController extends Controller
         $to              = $request->date('to');
         $direction       = $request->input('direction');
 
-        if ($selectedAccount) {
-            $account = BankAccount::whereKey($selectedAccount)->first();
-
-            if ($account) {
-                $this->normalizeBankAccountStatement($account);
-                $bankAccounts = BankAccount::where('status', 'active')->orderBy('name')->get();
-            }
-        }
+        $this->normalizeStatementAccounts($selectedAccount, $from, $to, $direction);
+        $bankAccounts = BankAccount::where('status', 'active')->orderBy('name')->get();
 
         $transactions = BankTransaction::with([
                 'bankAccount', 'creator', 'reconciledBy', 'editor',
@@ -1280,6 +1277,22 @@ class FinanceController extends Controller
             $this->syncOpeningBalanceTransaction($account, $account->updated_by ?: $account->created_by);
             $this->recalculateBalanceChain($account);
         });
+    }
+
+    private function normalizeStatementAccounts(?int $selectedAccount, mixed $from, mixed $to, ?string $direction): void
+    {
+        $accountIds = $selectedAccount
+            ? collect([$selectedAccount])
+            : BankTransaction::query()
+                ->when($from, fn($q) => $q->whereDate('transaction_date', '>=', $from))
+                ->when($to, fn($q) => $q->whereDate('transaction_date', '<=', $to))
+                ->when($direction, fn($q) => $q->where('direction', $direction))
+                ->distinct()
+                ->pluck('bank_account_id');
+
+        BankAccount::whereIn('id', $accountIds->filter()->unique()->values())
+            ->get()
+            ->each(fn(BankAccount $account) => $this->normalizeBankAccountStatement($account));
     }
 
     private function syncOpeningBalanceTransaction(BankAccount $account, ?int $userId): void
