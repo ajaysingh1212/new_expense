@@ -675,6 +675,7 @@ body { background: var(--st-bg) !important; }
                                 data-reference="{{ $txn->reference_no }}"
                                 data-category="{{ $txn->category }}"
                                 data-description="{{ $txn->description }}"
+                                data-is-opening="{{ $txn->category === 'Opening Balance' ? '1' : '0' }}"
                                 data-txnno="{{ $txn->transaction_no }}">
                             <i class="fas fa-pen"></i>
                         </button>
@@ -974,12 +975,16 @@ body { background: var(--st-bg) !important; }
                 <button type="button" class="close" data-dismiss="modal">&times;</button>
             </div>
             <div class="modal-body">
-                <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:9px;padding:10px 14px;font-size:.8rem;color:#92400e;margin-bottom:16px;">
+                <div id="et_normalHint" style="background:#fffbeb;border:1px solid #fde68a;border-radius:9px;padding:10px 14px;font-size:.8rem;color:#92400e;margin-bottom:16px;">
                     <i class="fas fa-triangle-exclamation mr-1"></i>
                     Amount/direction change karne par linked ledger/expense/cashflow aur bank balance automatically update ho jayega.
                 </div>
+                <div id="et_openingHint" style="display:none;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:9px;padding:10px 14px;font-size:.8rem;color:#065f46;margin-bottom:16px;">
+                    <i class="fas fa-wallet mr-1"></i>
+                    Opening balance edit karne par ye amount account ke starting balance me save hoga aur poori statement dobara calculate hogi.
+                </div>
                 <div class="row">
-                    <div class="col-md-6 form-group">
+                    <div class="col-md-6 form-group" id="et_directionGroup">
                         <label>Direction *</label>
                         <select name="direction" id="et_direction" class="form-control" required>
                             <option value="credit">Credit</option>
@@ -994,7 +999,7 @@ body { background: var(--st-bg) !important; }
                         <label>Date *</label>
                         <input type="date" name="transaction_date" id="et_date" class="form-control" required>
                     </div>
-                    <div class="col-md-6 form-group">
+                    <div class="col-md-6 form-group" id="et_categoryGroup">
                         <label>Category</label>
                         <input name="category" id="et_category" class="form-control">
                     </div>
@@ -1002,7 +1007,7 @@ body { background: var(--st-bg) !important; }
                         <label>Party Name</label>
                         <input name="party_name" id="et_party" class="form-control">
                     </div>
-                    <div class="col-md-6 form-group">
+                    <div class="col-md-6 form-group" id="et_referenceGroup">
                         <label>Reference No.</label>
                         <input name="reference_no" id="et_reference" class="form-control">
                     </div>
@@ -1206,6 +1211,19 @@ body { background: var(--st-bg) !important; }
         document.getElementById('et_party').value        = d.party || '';
         document.getElementById('et_reference').value    = d.reference || '';
         document.getElementById('et_description').value  = d.description || '';
+
+        const isOpening = d.isOpening === '1';
+        document.getElementById('et_direction').value = isOpening ? 'credit' : (d.direction || 'credit');
+        document.getElementById('et_category').value = isOpening ? 'Opening Balance' : (d.category || '');
+        document.getElementById('et_reference').value = isOpening ? 'OPENING' : (d.reference || '');
+        document.getElementById('et_party').value = isOpening ? 'Opening Balance' : (d.party || '');
+
+        document.getElementById('et_normalHint').style.display = isOpening ? 'none' : 'block';
+        document.getElementById('et_openingHint').style.display = isOpening ? 'block' : 'none';
+        document.getElementById('et_directionGroup').style.display = isOpening ? 'none' : 'block';
+        document.getElementById('et_categoryGroup').style.display = isOpening ? 'none' : 'block';
+        document.getElementById('et_referenceGroup').style.display = isOpening ? 'none' : 'block';
+
         $('#editTxnModal').modal('show');
     };
 

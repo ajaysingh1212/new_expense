@@ -167,7 +167,7 @@ class FinanceController extends Controller
                         ->orWhere('direction', 'like', "%{$search}%");
                 });
             })
-            ->orderByRaw("CASE WHEN category = 'Opening Balance' AND reference_no = 'OPENING' THEN 0 ELSE 1 END")
+            ->orderByRaw("CASE WHEN category = 'Opening Balance' AND (reference_no = 'OPENING' OR party_name = 'Opening Balance') THEN 0 ELSE 1 END")
             ->orderBy('transaction_date')
             ->orderBy('id')
             ->paginate(30);
@@ -204,7 +204,7 @@ class FinanceController extends Controller
         $bankAccount->load(['creator', 'editor']);
         $transactions = $bankAccount->transactions()
             ->with(['creator'])
-            ->orderByRaw("CASE WHEN category = 'Opening Balance' AND reference_no = 'OPENING' THEN 0 ELSE 1 END")
+            ->orderByRaw("CASE WHEN category = 'Opening Balance' AND (reference_no = 'OPENING' OR party_name = 'Opening Balance') THEN 0 ELSE 1 END")
             ->orderBy('transaction_date')
             ->orderBy('id')
             ->get();
@@ -325,7 +325,7 @@ class FinanceController extends Controller
             ->when($from,      fn($q) => $q->whereDate('transaction_date', '>=', $from))
             ->when($to,        fn($q) => $q->whereDate('transaction_date', '<=', $to))
             ->when($direction, fn($q) => $q->where('direction', $direction))
-            ->orderByRaw("CASE WHEN category = 'Opening Balance' AND reference_no = 'OPENING' THEN 0 ELSE 1 END")
+            ->orderByRaw("CASE WHEN category = 'Opening Balance' AND (reference_no = 'OPENING' OR party_name = 'Opening Balance') THEN 0 ELSE 1 END")
             ->orderBy('transaction_date')
             ->orderBy('id')
             ->paginate(30)
@@ -1266,7 +1266,7 @@ class FinanceController extends Controller
         $amount = (float) $account->opening_balance;
 
         if ($amount <= 0) {
-            $openingTransaction?->delete();
+            $this->openingBalanceTransactions($account)->get()->each->delete();
             return;
         }
 
@@ -1284,10 +1284,12 @@ class FinanceController extends Controller
                 'updated_by' => $userId,
             ]);
 
+            $this->removeDuplicateOpeningTransactions($account, $openingTransaction->id);
+
             return;
         }
 
-        BankTransaction::create([
+        $openingTransaction = BankTransaction::create([
             'bank_account_id' => $account->id,
             'transaction_no' => $this->nextDocumentNumber('TXN'),
             'transaction_date' => $date,
@@ -1301,16 +1303,51 @@ class FinanceController extends Controller
             'reconciliation_status' => 'unreconciled',
             'created_by' => $userId,
         ]);
+
+        $this->removeDuplicateOpeningTransactions($account, $openingTransaction->id);
     }
 
     private function openingBalanceTransaction(BankAccount $account): ?BankTransaction
     {
-        return BankTransaction::where('bank_account_id', $account->id)
-            ->where('category', 'Opening Balance')
-            ->where('reference_no', 'OPENING')
+        return $this->openingBalanceTransactions($account)
             ->orderBy('id')
             ->lockForUpdate()
             ->first();
+    }
+
+    private function openingBalanceTransactions(BankAccount $account)
+    {
+        return BankTransaction::where('bank_account_id', $account->id)
+            ->where(function ($query) {
+                $query->where(function ($q) {
+                    $q->where('category', 'Opening Balance')
+                        ->where('reference_no', 'OPENING');
+                })->orWhere(function ($q) {
+                    $q->where('party_name', 'Opening Balance')
+                        ->where('category', 'Opening Balance');
+                });
+            });
+    }
+
+    private function removeDuplicateOpeningTransactions(BankAccount $account, ?int $keepId = null): void
+    {
+        $keepId ??= $this->openingBalanceTransaction($account)?->id;
+
+        if (!$keepId) {
+            return;
+        }
+
+        $this->openingBalanceTransactions($account)
+            ->where('id', '!=', $keepId)
+            ->lockForUpdate()
+            ->get()
+            ->each->delete();
+    }
+
+    private function isOpeningBalanceTransaction(BankTransaction $transaction): bool
+    {
+        return $transaction->category === 'Opening Balance'
+            && ($transaction->reference_no === 'OPENING' || $transaction->party_name === 'Opening Balance');
     }
 
     //  TRANSACTION EDIT / DELETE (Admin only — cascades to source + balance)
@@ -1319,10 +1356,6 @@ class FinanceController extends Controller
     public function updateTransaction(Request $request, BankTransaction $transaction)
     {
         $this->ensureAdmin($request->user());
-
-        if ($transaction->category === 'Opening Balance') {
-            return back()->with('error', 'Opening balance entry ko edit nahi kar sakte.');
-        }
 
         $data = $request->validate([
             'direction'        => ['required', Rule::in(['credit', 'debit'])],
@@ -1338,6 +1371,31 @@ class FinanceController extends Controller
             $transaction = BankTransaction::lockForUpdate()->findOrFail($transaction->id);
             $oldAmount    = (float) $transaction->amount;
             $account      = BankAccount::lockForUpdate()->findOrFail($transaction->bank_account_id);
+
+            if ($this->isOpeningBalanceTransaction($transaction)) {
+                $transaction->update([
+                    'transaction_date' => $data['transaction_date'],
+                    'direction' => 'credit',
+                    'amount' => $data['amount'],
+                    'party_name' => 'Opening Balance',
+                    'reference_no' => 'OPENING',
+                    'category' => 'Opening Balance',
+                    'description' => $data['description'] ?: 'Initial bank/cash balance',
+                    'updated_by' => $request->user()->id,
+                ]);
+
+                $account->update([
+                    'opening_balance' => $data['amount'],
+                    'opening_balance_date' => $data['transaction_date'],
+                    'updated_by' => $request->user()->id,
+                ]);
+
+                $this->removeDuplicateOpeningTransactions($account, $transaction->id);
+                $this->recalculateBalanceChain($account);
+
+                ActivityLog::log('updated', "Edited opening balance {$transaction->transaction_no} on {$account->name}", $transaction);
+                return;
+            }
 
             // ── Cascade update to whichever source created this transaction ──
             if ($transaction->transactionable_type === CashflowPlan::class && $transaction->transactionable) {
@@ -1478,7 +1536,7 @@ class FinanceController extends Controller
         $balance = 0.0;
 
         BankTransaction::where('bank_account_id', $account->id)
-            ->orderByRaw("CASE WHEN category = 'Opening Balance' AND reference_no = 'OPENING' THEN 0 ELSE 1 END")
+            ->orderByRaw("CASE WHEN category = 'Opening Balance' AND (reference_no = 'OPENING' OR party_name = 'Opening Balance') THEN 0 ELSE 1 END")
             ->orderBy('transaction_date')
             ->orderBy('id')
             ->get()
