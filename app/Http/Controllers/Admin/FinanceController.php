@@ -153,6 +153,8 @@ class FinanceController extends Controller
 
     public function showBankAccount(Request $request, BankAccount $bankAccount)
     {
+        $this->normalizeBankAccountStatement($bankAccount);
+        $bankAccount->refresh();
         $bankAccount->load(['creator', 'editor']);
         $transactions = $bankAccount->transactions()
             ->with(['creator'])
@@ -201,6 +203,8 @@ class FinanceController extends Controller
 
     public function downloadBankAccountStatementPdf(BankAccount $bankAccount)
     {
+        $this->normalizeBankAccountStatement($bankAccount);
+        $bankAccount->refresh();
         $bankAccount->load(['creator', 'editor']);
         $transactions = $bankAccount->transactions()
             ->with(['creator'])
@@ -310,6 +314,15 @@ class FinanceController extends Controller
         $from            = $request->date('from');
         $to              = $request->date('to');
         $direction       = $request->input('direction');
+
+        if ($selectedAccount) {
+            $account = BankAccount::whereKey($selectedAccount)->first();
+
+            if ($account) {
+                $this->normalizeBankAccountStatement($account);
+                $bankAccounts = BankAccount::where('status', 'active')->orderBy('name')->get();
+            }
+        }
 
         $transactions = BankTransaction::with([
                 'bankAccount', 'creator', 'reconciledBy', 'editor',
@@ -1260,6 +1273,15 @@ class FinanceController extends Controller
         return $transaction->refresh();
     }
 
+    private function normalizeBankAccountStatement(BankAccount $account): void
+    {
+        DB::transaction(function () use ($account) {
+            $account = BankAccount::lockForUpdate()->findOrFail($account->id);
+            $this->syncOpeningBalanceTransaction($account, $account->updated_by ?: $account->created_by);
+            $this->recalculateBalanceChain($account);
+        });
+    }
+
     private function syncOpeningBalanceTransaction(BankAccount $account, ?int $userId): void
     {
         $openingTransaction = $this->openingBalanceTransaction($account);
@@ -1542,10 +1564,10 @@ class FinanceController extends Controller
             ->get()
             ->each(function (BankTransaction $txn) use (&$balance) {
                 $balance += $txn->direction === 'credit' ? (float) $txn->amount : -(float) $txn->amount;
-                $txn->update(['balance_after' => $balance]);
+                $txn->forceFill(['balance_after' => $balance])->saveQuietly();
             });
 
-        $account->update(['current_balance' => $balance]);
+        $account->forceFill(['current_balance' => $balance])->saveQuietly();
     }
     private function nextDocumentNumber(string $prefix): string
     {
