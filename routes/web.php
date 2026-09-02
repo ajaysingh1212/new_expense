@@ -131,7 +131,7 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'active.user', 'requ
         Route::get('/bank-accounts/{bankAccount}', [FinanceController::class, 'showBankAccount'])->name('bank-accounts.show')->middleware('can:finance.bank.show');
         Route::put('/bank-accounts/{bankAccount}', [FinanceController::class, 'updateBankAccount'])->name('bank-accounts.update')->middleware('can:finance.bank.edit');
         Route::delete('/bank-accounts/{bankAccount}', [FinanceController::class, 'destroyBankAccount'])->name('bank-accounts.destroy')->middleware('can:finance.bank.delete');
-
+        Route::post('/bank-accounts/{bankAccount}/recalculate', [FinanceController::class, 'recalculateBankAccount'])->name('bank-accounts.recalculate')->middleware('can:finance.bank.edit');
         // Statement
         Route::get('/statement',  [FinanceController::class, 'statement'])->name('statement.index')->middleware('can:finance.bank.index');
 

@@ -176,7 +176,6 @@ class FinanceController extends Controller
             ->orderBy('transaction_date')
             ->orderBy('id')
             ->paginate(30);
-        $this->attachDisplayBalances($transactions);
 
         $allTransactions = $bankAccount->transactions();
         $totalCredit = (clone $allTransactions)->where('direction', 'credit')->sum('amount');
@@ -216,7 +215,6 @@ class FinanceController extends Controller
             ->orderBy('transaction_date')
             ->orderBy('id')
             ->get();
-        $this->attachDisplayBalances($transactions);
 
         $summary = [
             'total_credit' => $transactions->where('direction', 'credit')->sum('amount'),
@@ -342,7 +340,6 @@ class FinanceController extends Controller
             ->orderBy('id')
             ->paginate(30)
             ->withQueryString();
-        $this->attachDisplayBalances($transactions);
 
         $summary = [
             'credit' => $transactions->getCollection()->where('direction', 'credit')->sum('amount'),
@@ -1147,295 +1144,6 @@ class FinanceController extends Controller
     }
 
     // ════════════════════════════════════════════════════════════════════
-    //  PRIVATE HELPERS
-    // ════════════════════════════════════════════════════════════════════
-
-    private function deleteCashflowWithTransactions(CashflowPlan $cashflow, bool $revertTransactions): void
-    {
-        $cashflow->loadMissing('transaction');
-
-        if ($revertTransactions && $cashflow->transaction) {
-            $this->reverseAndDeleteTransaction($cashflow->transaction);
-        }
-
-        $cashflow->delete();
-    }
-
-    private function deleteExpenseWithTransactions(ExpensePlan $expense, bool $revertTransactions): void
-    {
-        $expense->loadMissing('payments.transaction');
-
-        if ($revertTransactions) {
-            foreach ($expense->payments as $payment) {
-                if ($payment->transaction) {
-                    $this->reverseAndDeleteTransaction($payment->transaction);
-                }
-                $payment->delete();
-            }
-        }
-
-        $expense->delete();
-    }
-
-    private function postApprovedPayment(ExpensePayment $payment, int $userId): void
-    {
-        $payment->loadMissing('expensePlan.ledger');
-        $expense = ExpensePlan::lockForUpdate()->findOrFail($payment->expense_plan_id);
-        $account = BankAccount::lockForUpdate()->findOrFail($payment->bank_account_id);
-
-        if ((float) $account->current_balance < (float) $payment->amount) {
-            throw ValidationException::withMessages([
-                'amount' => 'Insufficient bank balance for this payment.',
-            ]);
-        }
-
-        $account->decrement('current_balance', $payment->amount);
-        $account->refresh();
-
-        $expense->increment('paid_amount', $payment->amount);
-        $expense->refresh();
-        $expense->update(['status' => $expense->remaining_amount <= 0 ? 'paid' : 'partial']);
-
-        $expense->loadMissing('ledger');
-        $this->recordBankTransaction(
-            $account,
-            $payment,
-            'debit',
-            (float) $payment->amount,
-            $payment->payment_date,
-            $expense->vendor_name ?: $expense->ledger?->name,
-            $payment->reference_no,
-            $expense->ledger?->type,
-            $expense->title,
-            $userId
-        );
-    }
-
-    private function isDirectFinanceUser(User $user): bool
-    {
-        return $user->hasAnyRole(['admin', 'super-admin']);
-    }
-
-    private function reverseAndDeleteTransaction(BankTransaction $transaction): void
-    {
-        $account = BankAccount::withTrashed()->lockForUpdate()->find($transaction->bank_account_id);
-
-        if ($account) {
-            if ($transaction->direction === 'credit') {
-                $account->decrement('current_balance', $transaction->amount);
-            } else {
-                $account->increment('current_balance', $transaction->amount);
-            }
-        }
-
-        $transaction->delete();
-    }
-
-    private function storeAttachment(Request $request): ?string
-    {
-        if (!$request->hasFile('attachment')) {
-            return null;
-        }
-        return $request->file('attachment')->store('finance/attachments', 'public');
-    }
-
-    private function recordBankTransaction(
-        BankAccount $account,
-        mixed       $source,
-        string      $direction,
-        float       $amount,
-        string      $date,
-        ?string     $party,
-        ?string     $reference,
-        ?string     $category,
-        ?string     $description,
-        ?int        $userId
-    ): BankTransaction {
-        $transaction = BankTransaction::create([
-            'bank_account_id'       => $account->id,
-            'transactionable_type'  => $source ? get_class($source) : null,
-            'transactionable_id'    => $source?->id,
-            'transaction_no'        => $this->nextDocumentNumber('TXN'),
-            'transaction_date'      => $date,
-            'direction'             => $direction,
-            'amount'                => $amount,
-            'balance_after'         => $account->current_balance,
-            'party_name'            => $party,
-            'reference_no'          => $reference,
-            'category'              => $category,
-            'description'           => $description,
-            'reconciliation_status' => 'unreconciled',
-            'created_by'            => $userId,
-        ]);
-
-        $this->recalculateBalanceChain($account);
-
-        return $transaction->refresh();
-    }
-
-    private function normalizeBankAccountStatement(BankAccount $account): void
-    {
-        DB::transaction(function () use ($account) {
-            $account = BankAccount::lockForUpdate()->findOrFail($account->id);
-            $this->syncOpeningBalanceTransaction($account, $account->updated_by ?: $account->created_by);
-            $this->recalculateBalanceChain($account);
-        });
-    }
-
-    private function normalizeStatementAccounts(?int $selectedAccount, mixed $from, mixed $to, ?string $direction): void
-    {
-        $accountIds = $selectedAccount
-            ? collect([$selectedAccount])
-            : BankTransaction::query()
-                ->when($from, fn($q) => $q->whereDate('transaction_date', '>=', $from))
-                ->when($to, fn($q) => $q->whereDate('transaction_date', '<=', $to))
-                ->when($direction, fn($q) => $q->where('direction', $direction))
-                ->distinct()
-                ->pluck('bank_account_id');
-
-        BankAccount::whereIn('id', $accountIds->filter()->unique()->values())
-            ->get()
-            ->each(fn(BankAccount $account) => $this->normalizeBankAccountStatement($account));
-    }
-
-    private function attachDisplayBalances($transactions): void
-    {
-        $collection = method_exists($transactions, 'getCollection') ? $transactions->getCollection() : $transactions;
-
-        $collection->each(function (BankTransaction $transaction) {
-            $transaction->setAttribute('display_balance_after', $this->runningBalanceAfter($transaction));
-        });
-    }
-
-    private function runningBalanceAfter(BankTransaction $transaction): float
-    {
-        $date = $transaction->transaction_date?->toDateString();
-        $isOpening = $this->isOpeningBalanceTransaction($transaction);
-
-        return (float) BankTransaction::where('bank_account_id', $transaction->bank_account_id)
-            ->where(function ($query) use ($transaction, $date, $isOpening) {
-                if ($isOpening) {
-                    $query->where('id', $transaction->id);
-                    return;
-                }
-
-                $query->where(function ($q) {
-                    $q->where('category', 'Opening Balance')
-                        ->where(function ($opening) {
-                            $opening->where('reference_no', 'OPENING')
-                                ->orWhere('party_name', 'Opening Balance');
-                        });
-                })->orWhere(function ($q) use ($transaction, $date) {
-                    $q->where(function ($beforeDate) use ($date) {
-                        $beforeDate->whereDate('transaction_date', '<', $date)
-                            ->where(function ($notOpening) {
-                                $notOpening->where('category', '!=', 'Opening Balance')
-                                    ->orWhereNull('category');
-                            });
-                    })->orWhere(function ($sameDate) use ($transaction, $date) {
-                        $sameDate->whereDate('transaction_date', $date)
-                            ->where('id', '<=', $transaction->id)
-                            ->where(function ($notOpening) {
-                                $notOpening->where('category', '!=', 'Opening Balance')
-                                    ->orWhereNull('category');
-                            });
-                    });
-                });
-            })
-            ->selectRaw("COALESCE(SUM(CASE WHEN direction = 'credit' THEN amount ELSE -amount END), 0) as running_balance")
-            ->value('running_balance');
-    }
-
-    private function syncOpeningBalanceTransaction(BankAccount $account, ?int $userId): void
-    {
-        $openingTransaction = $this->openingBalanceTransaction($account);
-        $amount = (float) $account->opening_balance;
-
-        if ($amount <= 0) {
-            $this->openingBalanceTransactions($account)->get()->each->delete();
-            return;
-        }
-
-        $date = $account->opening_balance_date?->toDateString() ?: now()->toDateString();
-
-        if ($openingTransaction) {
-            $openingTransaction->update([
-                'transaction_date' => $date,
-                'direction' => 'credit',
-                'amount' => $amount,
-                'party_name' => 'Opening Balance',
-                'reference_no' => 'OPENING',
-                'category' => 'Opening Balance',
-                'description' => 'Initial bank/cash balance',
-                'updated_by' => $userId,
-            ]);
-
-            $this->removeDuplicateOpeningTransactions($account, $openingTransaction->id);
-
-            return;
-        }
-
-        $openingTransaction = BankTransaction::create([
-            'bank_account_id' => $account->id,
-            'transaction_no' => $this->nextDocumentNumber('TXN'),
-            'transaction_date' => $date,
-            'direction' => 'credit',
-            'amount' => $amount,
-            'balance_after' => $amount,
-            'party_name' => 'Opening Balance',
-            'reference_no' => 'OPENING',
-            'category' => 'Opening Balance',
-            'description' => 'Initial bank/cash balance',
-            'reconciliation_status' => 'unreconciled',
-            'created_by' => $userId,
-        ]);
-
-        $this->removeDuplicateOpeningTransactions($account, $openingTransaction->id);
-    }
-
-    private function openingBalanceTransaction(BankAccount $account): ?BankTransaction
-    {
-        return $this->openingBalanceTransactions($account)
-            ->orderBy('id')
-            ->lockForUpdate()
-            ->first();
-    }
-
-    private function openingBalanceTransactions(BankAccount $account)
-    {
-        return BankTransaction::where('bank_account_id', $account->id)
-            ->where(function ($query) {
-                $query->where(function ($q) {
-                    $q->where('category', 'Opening Balance')
-                        ->where('reference_no', 'OPENING');
-                })->orWhere(function ($q) {
-                    $q->where('party_name', 'Opening Balance')
-                        ->where('category', 'Opening Balance');
-                });
-            });
-    }
-
-    private function removeDuplicateOpeningTransactions(BankAccount $account, ?int $keepId = null): void
-    {
-        $keepId ??= $this->openingBalanceTransaction($account)?->id;
-
-        if (!$keepId) {
-            return;
-        }
-
-        $this->openingBalanceTransactions($account)
-            ->where('id', '!=', $keepId)
-            ->lockForUpdate()
-            ->get()
-            ->each->delete();
-    }
-
-    private function isOpeningBalanceTransaction(BankTransaction $transaction): bool
-    {
-        return $transaction->category === 'Opening Balance'
-            && ($transaction->reference_no === 'OPENING' || $transaction->party_name === 'Opening Balance');
-    }
-
     //  TRANSACTION EDIT / DELETE (Admin only — cascades to source + balance)
     // ════════════════════════════════════════════════════════════════════
 
@@ -1597,6 +1305,289 @@ class FinanceController extends Controller
     }
 
     /**
+     * Force-recalculate a bank account's entire balance chain from scratch.
+     * Use this whenever a displayed balance looks "off" — it re-derives
+     * current_balance and every transaction's balance_after strictly in
+     * date/id order, and also removes any stray duplicate Opening Balance
+     * rows that might be causing double-counting.
+     */
+    public function recalculateBankAccount(Request $request, BankAccount $bankAccount)
+    {
+        $this->ensureAdmin($request->user());
+
+        $before = (float) $bankAccount->current_balance;
+
+        DB::transaction(function () use ($bankAccount) {
+            $bankAccount = BankAccount::lockForUpdate()->findOrFail($bankAccount->id);
+            $this->syncOpeningBalanceTransaction($bankAccount, $bankAccount->updated_by ?: $bankAccount->created_by);
+            $this->recalculateBalanceChain($bankAccount);
+        });
+
+        $bankAccount->refresh();
+        $after = (float) $bankAccount->current_balance;
+
+        ActivityLog::log(
+            'recalculated',
+            "Recalculated balance for {$bankAccount->name}: Rs " . number_format($before, 2) . ' -> Rs ' . number_format($after, 2),
+            $bankAccount
+        );
+
+        if (abs($before - $after) < 0.01) {
+            return back()->with('info', "Balance already correct: Rs " . number_format($after, 2));
+        }
+
+        return back()->with('success', "Balance recalculated for {$bankAccount->name}. Old: Rs " . number_format($before, 2) . " -> New: Rs " . number_format($after, 2));
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    //  PRIVATE HELPERS
+    // ════════════════════════════════════════════════════════════════════
+
+    private function deleteCashflowWithTransactions(CashflowPlan $cashflow, bool $revertTransactions): void
+    {
+        $cashflow->loadMissing('transaction');
+
+        if ($revertTransactions && $cashflow->transaction) {
+            $this->reverseAndDeleteTransaction($cashflow->transaction);
+        }
+
+        $cashflow->delete();
+    }
+
+    private function deleteExpenseWithTransactions(ExpensePlan $expense, bool $revertTransactions): void
+    {
+        $expense->loadMissing('payments.transaction');
+
+        if ($revertTransactions) {
+            foreach ($expense->payments as $payment) {
+                if ($payment->transaction) {
+                    $this->reverseAndDeleteTransaction($payment->transaction);
+                }
+                $payment->delete();
+            }
+        }
+
+        $expense->delete();
+    }
+
+    private function postApprovedPayment(ExpensePayment $payment, int $userId): void
+    {
+        $payment->loadMissing('expensePlan.ledger');
+        $expense = ExpensePlan::lockForUpdate()->findOrFail($payment->expense_plan_id);
+        $account = BankAccount::lockForUpdate()->findOrFail($payment->bank_account_id);
+
+        if ((float) $account->current_balance < (float) $payment->amount) {
+            throw ValidationException::withMessages([
+                'amount' => 'Insufficient bank balance for this payment.',
+            ]);
+        }
+
+        $account->decrement('current_balance', $payment->amount);
+        $account->refresh();
+
+        $expense->increment('paid_amount', $payment->amount);
+        $expense->refresh();
+        $expense->update(['status' => $expense->remaining_amount <= 0 ? 'paid' : 'partial']);
+
+        $expense->loadMissing('ledger');
+        $this->recordBankTransaction(
+            $account,
+            $payment,
+            'debit',
+            (float) $payment->amount,
+            $payment->payment_date,
+            $expense->vendor_name ?: $expense->ledger?->name,
+            $payment->reference_no,
+            $expense->ledger?->type,
+            $expense->title,
+            $userId
+        );
+    }
+
+    private function isDirectFinanceUser(User $user): bool
+    {
+        return $user->hasAnyRole(['admin', 'super-admin']);
+    }
+
+    private function reverseAndDeleteTransaction(BankTransaction $transaction): void
+    {
+        $account = BankAccount::withTrashed()->lockForUpdate()->find($transaction->bank_account_id);
+
+        if ($account) {
+            if ($transaction->direction === 'credit') {
+                $account->decrement('current_balance', $transaction->amount);
+            } else {
+                $account->increment('current_balance', $transaction->amount);
+            }
+        }
+
+        $transaction->delete();
+
+        // Keep the chain (balance_after values) consistent after the deletion,
+        // not just the current_balance snapshot.
+        if ($account) {
+            $this->recalculateBalanceChain($account);
+        }
+    }
+
+    private function storeAttachment(Request $request): ?string
+    {
+        if (!$request->hasFile('attachment')) {
+            return null;
+        }
+        return $request->file('attachment')->store('finance/attachments', 'public');
+    }
+
+    private function recordBankTransaction(
+        BankAccount $account,
+        mixed       $source,
+        string      $direction,
+        float       $amount,
+        string      $date,
+        ?string     $party,
+        ?string     $reference,
+        ?string     $category,
+        ?string     $description,
+        ?int        $userId
+    ): BankTransaction {
+        $transaction = BankTransaction::create([
+            'bank_account_id'       => $account->id,
+            'transactionable_type'  => $source ? get_class($source) : null,
+            'transactionable_id'    => $source?->id,
+            'transaction_no'        => $this->nextDocumentNumber('TXN'),
+            'transaction_date'      => $date,
+            'direction'             => $direction,
+            'amount'                => round($amount, 2),
+            'balance_after'         => $account->current_balance,
+            'party_name'            => $party,
+            'reference_no'          => $reference,
+            'category'              => $category,
+            'description'           => $description,
+            'reconciliation_status' => 'unreconciled',
+            'created_by'            => $userId,
+        ]);
+
+        $this->recalculateBalanceChain($account);
+
+        return $transaction->refresh();
+    }
+
+    private function normalizeBankAccountStatement(BankAccount $account): void
+    {
+        DB::transaction(function () use ($account) {
+            $account = BankAccount::lockForUpdate()->findOrFail($account->id);
+            $this->syncOpeningBalanceTransaction($account, $account->updated_by ?: $account->created_by);
+            $this->recalculateBalanceChain($account);
+        });
+    }
+
+    private function normalizeStatementAccounts(?int $selectedAccount, mixed $from, mixed $to, ?string $direction): void
+    {
+        $accountIds = $selectedAccount
+            ? collect([$selectedAccount])
+            : BankTransaction::query()
+                ->when($from, fn($q) => $q->whereDate('transaction_date', '>=', $from))
+                ->when($to, fn($q) => $q->whereDate('transaction_date', '<=', $to))
+                ->when($direction, fn($q) => $q->where('direction', $direction))
+                ->distinct()
+                ->pluck('bank_account_id');
+
+        BankAccount::whereIn('id', $accountIds->filter()->unique()->values())
+            ->get()
+            ->each(fn(BankAccount $account) => $this->normalizeBankAccountStatement($account));
+    }
+
+    private function syncOpeningBalanceTransaction(BankAccount $account, ?int $userId): void
+    {
+        $openingTransaction = $this->openingBalanceTransaction($account);
+        $amount = (float) $account->opening_balance;
+
+        if ($amount <= 0) {
+            $this->openingBalanceTransactions($account)->get()->each->delete();
+            return;
+        }
+
+        $date = $account->opening_balance_date?->toDateString() ?: now()->toDateString();
+
+        if ($openingTransaction) {
+            $openingTransaction->update([
+                'transaction_date' => $date,
+                'direction' => 'credit',
+                'amount' => round($amount, 2),
+                'party_name' => 'Opening Balance',
+                'reference_no' => 'OPENING',
+                'category' => 'Opening Balance',
+                'description' => 'Initial bank/cash balance',
+                'updated_by' => $userId,
+            ]);
+
+            $this->removeDuplicateOpeningTransactions($account, $openingTransaction->id);
+
+            return;
+        }
+
+        $openingTransaction = BankTransaction::create([
+            'bank_account_id' => $account->id,
+            'transaction_no' => $this->nextDocumentNumber('TXN'),
+            'transaction_date' => $date,
+            'direction' => 'credit',
+            'amount' => round($amount, 2),
+            'balance_after' => round($amount, 2),
+            'party_name' => 'Opening Balance',
+            'reference_no' => 'OPENING',
+            'category' => 'Opening Balance',
+            'description' => 'Initial bank/cash balance',
+            'reconciliation_status' => 'unreconciled',
+            'created_by' => $userId,
+        ]);
+
+        $this->removeDuplicateOpeningTransactions($account, $openingTransaction->id);
+    }
+
+    private function openingBalanceTransaction(BankAccount $account): ?BankTransaction
+    {
+        return $this->openingBalanceTransactions($account)
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->first();
+    }
+
+    private function openingBalanceTransactions(BankAccount $account)
+    {
+        return BankTransaction::where('bank_account_id', $account->id)
+            ->where(function ($query) {
+                $query->where(function ($q) {
+                    $q->where('category', 'Opening Balance')
+                        ->where('reference_no', 'OPENING');
+                })->orWhere(function ($q) {
+                    $q->where('party_name', 'Opening Balance')
+                        ->where('category', 'Opening Balance');
+                });
+            });
+    }
+
+    private function removeDuplicateOpeningTransactions(BankAccount $account, ?int $keepId = null): void
+    {
+        $keepId ??= $this->openingBalanceTransaction($account)?->id;
+
+        if (!$keepId) {
+            return;
+        }
+
+        $this->openingBalanceTransactions($account)
+            ->where('id', '!=', $keepId)
+            ->lockForUpdate()
+            ->get()
+            ->each->delete();
+    }
+
+    private function isOpeningBalanceTransaction(BankTransaction $transaction): bool
+    {
+        return $transaction->category === 'Opening Balance'
+            && ($transaction->reference_no === 'OPENING' || $transaction->party_name === 'Opening Balance');
+    }
+
+    /**
      * Sirf admin/super-admin ye edit/delete kar sakte hain.
      */
     private function ensureAdmin(User $user): void
@@ -1609,16 +1600,25 @@ class FinanceController extends Controller
      * current_balance aur har txn ka balance_after dobara sahi karta hai.
      * Edit/Delete ke baad hamesha call karo.
      *
-     * NOTE: Seed 0.0 se start hota hai kyunki Opening Balance khud bhi
-     * ek BankTransaction row hai (category 'Opening Balance', direction
-     * 'credit', amount = opening_balance). Agar yahan seed
-     * $account->opening_balance rakha jaaye, to loop me Opening Balance
-     * wali transaction dobara add ho jaati hai aur balance double
-     * (opening_balance x 2) ho jaata hai — yahi wo bug tha jisse
-     * "opening balance 71,745 dala tha par 143,490 show ho raha tha".
+     * FIX (yeh function pehle bhi seed 0.0 se start karta tha, jo sahi tha,
+     * lekin agar kabhi duplicate "Opening Balance" rows DB me reh gayi
+     * thi — purani buggy save ya kisi edge-case se — to wo dono count ho
+     * jaati thi aur total galat aa jaata tha, e.g. "28,202 dala tha par
+     * agla credit +15,300 hone ke bajaye seedha 71,703.18 ban gaya".
+     * Ab yeh function khud pehle duplicate Opening Balance rows clean
+     * karta hai, phir sirf ek baaki bachi hui row ko count karta hai —
+     * taaki chain hamesha simple sequential math follow kare:
+     *   naya_balance = purana_balance + credit  (ya)  purana_balance - debit
+     *
+     * Har step par round(...,2) bhi laga diya hai taaki float rounding se
+     * paise 0.0000001 jaisi chhoti galtiyon se drift na karein.
      */
     private function recalculateBalanceChain(BankAccount $account): void
     {
+        // Pehle koi bhi duplicate Opening Balance row hataa do, warna wo
+        // chain me dobara count ho kar balance ko galat bana degi.
+        $this->removeDuplicateOpeningTransactions($account);
+
         $balance = 0.0;
 
         BankTransaction::where('bank_account_id', $account->id)
@@ -1627,7 +1627,8 @@ class FinanceController extends Controller
             ->orderBy('id')
             ->get()
             ->each(function (BankTransaction $txn) use (&$balance) {
-                $balance += $txn->direction === 'credit' ? (float) $txn->amount : -(float) $txn->amount;
+                $delta   = $txn->direction === 'credit' ? (float) $txn->amount : -(float) $txn->amount;
+                $balance = round($balance + $delta, 2);
                 $txn->forceFill(['balance_after' => $balance])->saveQuietly();
             });
 
