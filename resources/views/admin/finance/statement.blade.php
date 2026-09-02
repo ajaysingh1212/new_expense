@@ -70,9 +70,6 @@ body { background: var(--st-bg) !important; }
 .btn-entry {
     background: #2563eb; color: #fff;
 }
-.btn-recalc {
-    background: #7c3aed; color: #fff;
-}
 .btn-print {
     background: rgba(255,255,255,.1); color: #fff;
     border: 1px solid rgba(255,255,255,.15) !important;
@@ -157,6 +154,8 @@ body { background: var(--st-bg) !important; }
     display: flex; align-items: center; gap: 8px;
 }
 .stmt-card-header .hdr-actions { display: flex; gap: 8px; align-items: center; }
+.balance-rule { font-size:.72rem; color:var(--st-muted); margin-top:3px; }
+.balance-negative { color:var(--st-debit) !important; }
 
 /* Ledger-style table */
 .stmt-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
@@ -353,21 +352,6 @@ body { background: var(--st-bg) !important; }
             <i class="fas fa-pen-to-square"></i> Manual Entry
         </button>
         @endcan
-
-        {{-- Force-recalculate this account's balance chain from scratch.
-             Only makes sense when a single bank account is selected, and
-             only admins/super-admins can trigger it. --}}
-        @if($isAdmin && $selectedBankBalance)
-        <form method="POST" action="{{ route('admin.finance.bank-accounts.recalculate', $selectedBankBalance->id) }}" style="display:inline;">
-            @csrf
-            <button type="submit" class="btn-stmt btn-recalc"
-                    title="Re-derive balance strictly from opening balance + all transactions in date order"
-                    onclick="return confirm('Recalculate balance for {{ $selectedBankBalance->name }}?\n\nYe is account ki saari transactions ko date-order me dobara add/subtract karke current balance aur har row ka Balance column sahi karega.');">
-                <i class="fas fa-rotate"></i> Recalculate Balance
-            </button>
-        </form>
-        @endif
-
         <button class="btn-stmt btn-print" onclick="window.print()">
             <i class="fas fa-print"></i> Print
         </button>
@@ -618,7 +602,7 @@ body { background: var(--st-bg) !important; }
 
                 {{-- Balance After --}}
                 <td style="text-align:right;">
-                    <span class="amt-balance">{{ $money($txn->balance_after) }}</span>
+                    <span class="amt-balance {{ (float) $txn->balance_after < 0 ? 'balance-negative' : '' }}">{{ $money($txn->balance_after) }}</span>
                 </td>
 
                 {{-- Reconciliation --}}
